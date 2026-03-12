@@ -4,7 +4,7 @@ import { useRef, useMemo, useEffect } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { isBuildingAd, type SkyAd } from "@/lib/skyAds";
-import type { CityBuilding } from "@/lib/github";
+import type { CityBuilding } from "@/lib/instagram";
 import { createLedTexture, ViewabilityTracker, SCROLL_SPEED, markAdPointerConsumed, registerAdMesh, unregisterAdMesh } from "./SkyAds";
 
 // Shared geometries — prevents GPU leaks on mount/unmount

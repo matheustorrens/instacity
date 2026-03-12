@@ -5,7 +5,7 @@ import {
   DISTRICT_NAMES,
   DISTRICT_COLORS,
   DISTRICT_DESCRIPTIONS,
-} from "@/lib/github";
+} from "@/lib/instagram";
 
 interface DistrictChooserProps {
   currentDistrict: string | null;

@@ -1,4 +1,12 @@
-import type { TopRepo } from "@/lib/github";
+// GitHub-specific types (this file is for GitHub API calls, kept for backward compatibility)
+// Renamed to avoid conflict with Instagram's TopHighlight type
+
+interface GitHubTopRepo {
+  name: string;
+  stars: number;
+  language: string | null;
+  url: string;
+}
 
 // ─── Constants ───────────────────────────────────────────────
 
@@ -216,7 +224,7 @@ export interface GitHubDeveloperData {
   public_repos: number;
   total_stars: number;
   primary_language: string | null;
-  top_repos: TopRepo[];
+  top_repos: GitHubTopRepo[];
   github_etag: string | null;
   contributions_total?: number;
   contribution_years?: number[];
@@ -306,7 +314,7 @@ export async function fetchGitHubDeveloperData(
   }
   const primaryLanguage = Object.entries(langCounts).sort(([, a], [, b]) => b - a)[0]?.[0] ?? null;
 
-  const topRepos: TopRepo[] = ownRepos
+  const topRepos: GitHubTopRepo[] = ownRepos
     .sort((a, b) => b.stargazers_count - a.stargazers_count)
     .slice(0, 5)
     .map((r) => ({ name: r.name, stars: r.stargazers_count, language: r.language, url: r.html_url }));

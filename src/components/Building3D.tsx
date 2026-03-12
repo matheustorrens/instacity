@@ -3,7 +3,7 @@
 import { useMemo, useRef, useEffect, memo } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { CityBuilding } from "@/lib/github";
+import type { CityBuilding } from "@/lib/instagram";
 import type { BuildingColors } from "./CityCanvas";
 import { ZONE_ITEMS } from "@/lib/zones";
 import {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import type { CityBuilding } from "@/lib/github";
+import type { CityBuilding } from "@/lib/instagram";
 import type { RaidPreviewResponse, RaidExecuteResponse } from "@/lib/raid";
 import { preloadRaidAudio, playRaidSound, stopRaidSound, fadeOutRaidSound, stopAllRaidSounds } from "@/lib/raidAudio";
 

@@ -20,18 +20,18 @@ function hm() {
 // ─── Identify ────────────────────────────────────────────────
 
 export function identifyUser(traits: {
-  github_login: string;
+  instagram_handle: string;
   email?: string;
-  developer_id?: number;
-  contributions?: number;
+  instagrammer_id?: number;
+  posts_count?: number;
   referrer?: string;
 }) {
   hm()?.identify({
-    name: traits.github_login,
+    name: traits.instagram_handle,
     email: traits.email,
-    github_login: traits.github_login,
-    developer_id: traits.developer_id,
-    contributions: traits.contributions,
+    instagram_handle: traits.instagram_handle,
+    instagrammer_id: traits.instagrammer_id,
+    posts_count: traits.posts_count,
     referrer: traits.referrer,
   });
 }
@@ -42,12 +42,12 @@ export function trackSignInClicked(source: string) {
   hm()?.track("sign_in_clicked", { source });
 }
 
-export function trackSignUpCompleted(github_login: string, ref?: string) {
-  hm()?.track("sign_up_completed", { github_login, ref });
+export function trackSignUpCompleted(instagram_handle: string, ref?: string) {
+  hm()?.track("sign_up_completed", { instagram_handle, ref });
 }
 
-export function trackBuildingClaimed(github_login: string) {
-  hm()?.track("building_claimed", { github_login });
+export function trackBuildingClaimed(instagram_handle: string) {
+  hm()?.track("building_claimed", { instagram_handle });
 }
 
 export function trackFreeItemClaimed() {
@@ -100,20 +100,20 @@ export function trackAdvertiseCtaClick() {
 
 // ─── Engagement ─────────────────────────────────────────────
 
-export function trackBuildingClicked(target_login: string) {
-  hm()?.track("building_clicked", { target_login });
+export function trackBuildingClicked(target_handle: string) {
+  hm()?.track("building_clicked", { target_handle });
 }
 
-export function trackKudosSent(target_login: string) {
-  hm()?.track("kudos_sent", { target_login });
+export function trackKudosSent(target_handle: string) {
+  hm()?.track("kudos_sent", { target_handle });
 }
 
 export function trackSearchUsed(query: string) {
   hm()?.track("search_used", { query });
 }
 
-export function trackProfileViewed(target_login: string) {
-  hm()?.track("profile_viewed", { target_login });
+export function trackProfileViewed(target_handle: string) {
+  hm()?.track("profile_viewed", { target_handle });
 }
 
 export function trackLeaderboardViewed(tab: string) {

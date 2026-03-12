@@ -47,10 +47,10 @@ export const TIER_ORDER: Record<string, number> = {
 
 // ─── Core Logic ──────────────────────────────────────────────
 
-interface DevStats {
-  contributions: number;
-  public_repos: number;
-  total_stars: number;
+interface InstagrammerStats {
+  posts_count: number;
+  followers_count: number;
+  following_count: number;
   referral_count: number;
   kudos_count: number;
   gifts_sent: number;
@@ -64,27 +64,27 @@ interface DevStats {
 }
 
 /**
- * Check and unlock new achievements for a developer.
- * - Finds all achievements the dev qualifies for but hasn't unlocked yet
+ * Check and unlock new achievements for an instagrammer.
+ * - Finds all achievements the user qualifies for but hasn't unlocked yet
  * - Batch inserts unlocks
  * - Grants free items for unlock_item rewards
  * - Inserts feed events
  * Returns array of newly unlocked achievement IDs.
  */
 export async function checkAchievements(
-  developerId: number,
-  stats: DevStats,
-  actorLogin?: string
+  instagrammerId: number,
+  stats: InstagrammerStats,
+  actorHandle?: string
 ): Promise<string[]> {
   const sb = getSupabaseAdmin();
 
-  // Fetch all achievements not yet unlocked by this dev
+  // Fetch all achievements not yet unlocked by this instagrammer
   const [allRes, unlockedRes] = await Promise.all([
     sb.from("achievements").select("id, category, threshold, tier, name, reward_type, reward_item_id"),
     sb
-      .from("developer_achievements")
+      .from("instagrammer_achievements")
       .select("achievement_id")
-      .eq("developer_id", developerId),
+      .eq("instagrammer_id", instagrammerId),
   ]);
 
   const unlocked = new Set(
@@ -98,11 +98,11 @@ export async function checkAchievements(
   const newUnlocks = eligible.filter((a) => {
     switch (a.category) {
       case "commits":
-        return stats.contributions >= a.threshold;
+        return stats.posts_count >= a.threshold;
       case "repos":
-        return stats.public_repos >= a.threshold;
+        return stats.followers_count >= a.threshold;
       case "stars":
-        return stats.total_stars >= a.threshold;
+        return stats.following_count >= a.threshold;
       case "social":
         return stats.referral_count >= a.threshold;
       case "kudos":
@@ -128,15 +128,15 @@ export async function checkAchievements(
 
   if (newUnlocks.length === 0) return [];
 
-  // Batch insert developer_achievements
+  // Batch insert instagrammer_achievements
   const unlockRows = newUnlocks.map((a) => ({
-    developer_id: developerId,
+    instagrammer_id: instagrammerId,
     achievement_id: a.id,
   }));
 
   await sb
-    .from("developer_achievements")
-    .upsert(unlockRows, { onConflict: "developer_id,achievement_id" });
+    .from("instagrammer_achievements")
+    .upsert(unlockRows, { onConflict: "instagrammer_id,achievement_id" });
 
   // Grant free items for unlock_item rewards
   const itemRewards = newUnlocks.filter(
@@ -145,19 +145,19 @@ export async function checkAchievements(
 
   if (itemRewards.length > 0) {
     const purchaseRows = itemRewards.map((a) => ({
-      developer_id: developerId,
+      instagrammer_id: instagrammerId,
       item_id: a.reward_item_id!,
       provider: "achievement",
-      provider_tx_id: `achievement_${developerId}_${a.id}`,
+      provider_tx_id: `achievement_${instagrammerId}_${a.id}`,
       amount_cents: 0,
       currency: "usd",
       status: "completed",
     }));
 
-    // Batch upsert — unique index on (developer_id, item_id) prevents duplicates
+    // Batch upsert — unique index on (instagrammer_id, item_id) prevents duplicates
     await sb
       .from("purchases")
-      .upsert(purchaseRows, { onConflict: "developer_id,item_id" });
+      .upsert(purchaseRows, { onConflict: "instagrammer_id,item_id" });
   }
 
   // Grant XP for each achievement unlock
@@ -165,7 +165,7 @@ export async function checkAchievements(
     const xpAmount = xpForAchievementTier(a.tier);
     if (xpAmount > 0) {
       sb.rpc("grant_xp", {
-        p_developer_id: developerId,
+        p_instagrammer_id: instagrammerId,
         p_source: "achievement",
         p_amount: xpAmount,
       }).then();
@@ -177,9 +177,9 @@ export async function checkAchievements(
     const a = newUnlocks[0];
     await sb.from("activity_feed").insert({
       event_type: "achievement_unlocked",
-      actor_id: developerId,
+      actor_id: instagrammerId,
       metadata: {
-        login: actorLogin,
+        handle: actorHandle,
         achievement_id: a.id,
         achievement_name: a.name,
         tier: a.tier,
@@ -189,9 +189,9 @@ export async function checkAchievements(
     // Aggregated: "@user unlocked N achievements"
     await sb.from("activity_feed").insert({
       event_type: "achievement_unlocked",
-      actor_id: developerId,
+      actor_id: instagrammerId,
       metadata: {
-        login: actorLogin,
+        handle: actorHandle,
         count: newUnlocks.length,
         achievements: newUnlocks.map((a) => ({
           id: a.id,
@@ -202,13 +202,13 @@ export async function checkAchievements(
     });
   }
 
-  // Notify developer of gold/diamond achievements (fire-and-forget)
-  if (actorLogin) {
+  // Notify instagrammer of gold/diamond achievements (fire-and-forget)
+  if (actorHandle) {
     void (async () => {
       try {
         sendAchievementNotification(
-          developerId,
-          actorLogin,
+          instagrammerId,
+          actorHandle,
           newUnlocks.map((a) => ({ id: a.id, name: a.name, tier: a.tier })),
         );
       } catch (err: unknown) {

@@ -3,7 +3,7 @@
 import { useRef, useMemo, useEffect } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { CityBuilding } from "@/lib/github";
+import type { CityBuilding } from "@/lib/instagram";
 import type { LiveSession } from "@/lib/useCodingPresence";
 
 const DOT_SIZE = 4;

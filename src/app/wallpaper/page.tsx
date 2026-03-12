@@ -10,7 +10,7 @@ import {
   type CityDecoration,
   type CityRiver,
   type CityBridge,
-} from "@/lib/github";
+} from "@/lib/instagram";
 
 const CityCanvas = dynamic(() => import("@/components/CityCanvas"), { ssr: false });
 

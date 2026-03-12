@@ -4,14 +4,14 @@ import { useState } from "react";
 import Image from "next/image";
 
 export interface InvitePreview {
-  github_login: string;
+  instagram_handle: string;
   avatar_url: string | null;
   name: string | null;
   bio: string | null;
-  contributions: number;
-  public_repos: number;
-  total_stars: number;
-  primary_language: string | null;
+  posts_count: number;
+  followers_count: number;
+  following_count: number;
+  district: string | null;
 }
 
 interface InviteCardProps {
@@ -26,7 +26,7 @@ interface InviteCardProps {
 export default function InviteCard({ developer, isLoggedIn, onLogin, onClose, accent, shadow }: InviteCardProps) {
   const [copied, setCopied] = useState(false);
 
-  const inviteUrl = `${window.location.origin}/?user=${developer.github_login}`;
+  const inviteUrl = `${window.location.origin}/?user=${developer.instagram_handle}`;
 
   const handleInvite = () => {
     navigator.clipboard.writeText(inviteUrl);
@@ -53,7 +53,7 @@ export default function InviteCard({ developer, isLoggedIn, onLogin, onClose, ac
         {developer.avatar_url && (
           <Image
             src={developer.avatar_url}
-            alt={developer.github_login}
+            alt={developer.instagram_handle}
             width={48}
             height={48}
             className="mx-auto mb-3 border-2 border-border"
@@ -63,7 +63,7 @@ export default function InviteCard({ developer, isLoggedIn, onLogin, onClose, ac
 
         {/* Name */}
         <p className="text-xs text-cream normal-case">
-          <span style={{ color: accent }}>@{developer.github_login}</span>
+          <span style={{ color: accent }}>@{developer.instagram_handle}</span>
           {developer.name && (
             <span className="text-muted"> ({developer.name})</span>
           )}
@@ -76,11 +76,11 @@ export default function InviteCard({ developer, isLoggedIn, onLogin, onClose, ac
 
         {/* Stats */}
         <p className="mt-2 text-[10px] text-muted normal-case">
-          <span style={{ color: accent }}>{developer.contributions.toLocaleString()}</span> contributions
+          <span style={{ color: accent }}>{developer.posts_count.toLocaleString()}</span> posts
           {" · "}
-          <span style={{ color: accent }}>{developer.total_stars.toLocaleString()}</span> stars
+          <span style={{ color: accent }}>{developer.following_count.toLocaleString()}</span> following
           {" · "}
-          <span style={{ color: accent }}>{developer.public_repos}</span> repos
+          <span style={{ color: accent }}>{developer.followers_count}</span> followers
         </p>
 
         {/* CTAs */}

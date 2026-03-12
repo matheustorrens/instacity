@@ -189,7 +189,7 @@ export async function POST(request: Request) {
       .single();
 
     if (devFull) {
-      const { calcBuildingDims } = await import("@/lib/github");
+      const { calcBuildingDims } = await import("@/lib/instagram");
       const dims = calcBuildingDims(
         devFull.github_login,
         devFull.contributions,

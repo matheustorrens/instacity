@@ -9,7 +9,7 @@ import InstancedLabels from "./InstancedLabels";
 import EffectsLayer from "./EffectsLayer";
 import LiveDots from "./LiveDots";
 import type { LiveSession } from "@/lib/useCodingPresence";
-import type { CityBuilding } from "@/lib/github";
+import type { CityBuilding } from "@/lib/instagram";
 import type { BuildingColors } from "./CityCanvas";
 
 const GRID_CELL_SIZE = 200;

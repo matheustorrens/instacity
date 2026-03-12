@@ -34,36 +34,37 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { target_login, boost_purchase_id, vehicle_id } = body as {
-    target_login: string;
+  const { target_handle, boost_purchase_id, vehicle_id } = body as {
+    target_handle: string;
     boost_purchase_id?: number;
     vehicle_id?: string;
   };
 
-  if (!target_login || typeof target_login !== "string") {
-    return NextResponse.json({ error: "Missing target_login" }, { status: 400 });
+  if (!target_handle || typeof target_handle !== "string") {
+    return NextResponse.json({ error: "Missing target_handle" }, { status: 400 });
   }
 
   const admin = getSupabaseAdmin();
 
-  const githubLogin = (
+  const instagramHandle = (
     user.user_metadata.user_name ??
     user.user_metadata.preferred_username ??
+    user.user_metadata.name ??
     ""
-  ).toLowerCase();
+  ).toLowerCase().replace(/\s+/g, "");
 
   // Fetch attacker + defender in parallel
-  const raidColumns = "id, claimed, github_login, avatar_url, contributions, public_repos, total_stars, kudos_count, app_streak, raid_xp, current_week_contributions, current_week_kudos_given, current_week_kudos_received";
+  const raidColumns = "id, claimed, instagram_handle, avatar_url, posts_count, followers_count, following_count, kudos_count, app_streak, raid_xp, current_week_contributions, current_week_kudos_given, current_week_kudos_received";
   const [attackerRes, defenderRes] = await Promise.all([
     admin
-      .from("developers")
+      .from("instagrammers")
       .select(raidColumns)
-      .eq("github_login", githubLogin)
+      .eq("instagram_handle", instagramHandle)
       .single(),
     admin
-      .from("developers")
+      .from("instagrammers")
       .select(raidColumns)
-      .eq("github_login", target_login.toLowerCase())
+      .eq("instagram_handle", target_handle.toLowerCase())
       .single(),
   ]);
 
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
       .from("purchases")
       .select("id, item_id, status, items!inner(metadata)")
       .eq("id", boost_purchase_id)
-      .eq("developer_id", attacker.id)
+      .eq("instagrammer_id", attacker.id)
       .eq("status", "completed")
       .single();
 
@@ -166,15 +167,15 @@ export async function POST(request: Request) {
   // Determine vehicle + tag style from saved loadout (or override from request)
   const [{ data: raidLoadoutRow }, { data: ownedVehiclePurchases }] = await Promise.all([
     admin
-      .from("developer_customizations")
+      .from("instagrammer_customizations")
       .select("config")
-      .eq("developer_id", attacker.id)
+      .eq("instagrammer_id", attacker.id)
       .eq("item_id", "raid_loadout")
       .maybeSingle(),
     admin
       .from("purchases")
       .select("item_id, items!inner(metadata)")
-      .eq("developer_id", attacker.id)
+      .eq("instagrammer_id", attacker.id)
       .eq("status", "completed"),
   ]);
 
@@ -258,7 +259,7 @@ export async function POST(request: Request) {
         raid_id: raidId,
         building_id: defender.id,
         attacker_id: attacker.id,
-        attacker_login: attacker.github_login,
+        attacker_handle: attacker.instagram_handle,
         tag_style: tagStyle,
         expires_at: new Date(Date.now() + RAID_TAG_DURATION_DAYS * 86400000).toISOString(),
       });
@@ -266,26 +267,26 @@ export async function POST(request: Request) {
       // Grant raid_xp (existing system) + general XP
       await Promise.all([
         admin
-          .from("developers")
+          .from("instagrammers")
           .update({ raid_xp: (attacker.raid_xp ?? 0) + XP_WIN_ATTACKER })
           .eq("id", attacker.id),
         admin
-          .from("developers")
+          .from("instagrammers")
           .update({ raid_xp: (defender.raid_xp ?? 0) + XP_WIN_DEFENDER })
           .eq("id", defender.id),
       ]);
       // General XP: attacker wins 50, defender gets 30 for being raided
-      admin.rpc("grant_xp", { p_developer_id: attacker.id, p_source: "raid_win", p_amount: 50 }).then();
-      admin.rpc("grant_xp", { p_developer_id: defender.id, p_source: "raid_defend", p_amount: 30 }).then();
+      admin.rpc("grant_xp", { p_instagrammer_id: attacker.id, p_source: "raid_win", p_amount: 50 }).then();
+      admin.rpc("grant_xp", { p_instagrammer_id: defender.id, p_source: "raid_defend", p_amount: 30 }).then();
     } else {
       // Defender gets XP for successful defense
       await admin
-        .from("developers")
+        .from("instagrammers")
         .update({ raid_xp: (defender.raid_xp ?? 0) + XP_LOSE_DEFENDER })
         .eq("id", defender.id);
       // General XP: attacker loses 15, defender defends 30
-      admin.rpc("grant_xp", { p_developer_id: attacker.id, p_source: "raid_loss", p_amount: 15 }).then();
-      admin.rpc("grant_xp", { p_developer_id: defender.id, p_source: "raid_defend", p_amount: 30 }).then();
+      admin.rpc("grant_xp", { p_instagrammer_id: attacker.id, p_source: "raid_loss", p_amount: 15 }).then();
+      admin.rpc("grant_xp", { p_instagrammer_id: defender.id, p_source: "raid_defend", p_amount: 30 }).then();
     }
 
     // Activity feed
@@ -294,8 +295,8 @@ export async function POST(request: Request) {
       actor_id: attacker.id,
       target_id: defender.id,
       metadata: {
-        attacker_login: attacker.github_login,
-        defender_login: defender.github_login,
+        attacker_handle: attacker.instagram_handle,
+        defender_handle: defender.instagram_handle,
         attack_score: attack.total,
         defense_score: defense.total,
       },
@@ -307,8 +308,8 @@ export async function POST(request: Request) {
     if (success) trackDailyMission(attacker.id, "win_battle");
     sendRaidAlertNotification(
       defender.id,
-      defender.github_login,
-      attacker.github_login,
+      defender.instagram_handle,
+      attacker.instagram_handle,
       raidId,
       success,
       attack.total,
@@ -323,30 +324,30 @@ export async function POST(request: Request) {
       checkAchievements(
         attacker.id,
         {
-          contributions: attacker.contributions ?? 0,
-          public_repos: attacker.public_repos ?? 0,
-          total_stars: attacker.total_stars ?? 0,
+          posts_count: attacker.posts_count ?? 0,
+          followers_count: attacker.followers_count ?? 0,
+          following_count: attacker.following_count ?? 0,
           referral_count: 0,
           kudos_count: attacker.kudos_count ?? 0,
           gifts_sent: 0,
           gifts_received: 0,
           raid_xp: newAttackerXp,
         },
-        attacker.github_login,
+        attacker.instagram_handle,
       ),
       checkAchievements(
         defender.id,
         {
-          contributions: defender.contributions ?? 0,
-          public_repos: defender.public_repos ?? 0,
-          total_stars: defender.total_stars ?? 0,
+          posts_count: defender.posts_count ?? 0,
+          followers_count: defender.followers_count ?? 0,
+          following_count: defender.following_count ?? 0,
           referral_count: 0,
           kudos_count: defender.kudos_count ?? 0,
           gifts_sent: 0,
           gifts_received: 0,
           raid_xp: newDefenderXp,
         },
-        defender.github_login,
+        defender.instagram_handle,
       ),
     ]);
 
@@ -361,16 +362,16 @@ export async function POST(request: Request) {
       attack_breakdown: attack.breakdown,
       defense_breakdown: defense.breakdown,
       attacker: {
-        login: attacker.github_login,
+        handle: attacker.instagram_handle,
         avatar: attacker.avatar_url,
         position: [0, 0, 0] as [number, number, number],
-        height: Math.max(20, Math.min(300, (attacker.contributions ?? 0) * 0.15)),
+        height: Math.max(20, Math.min(300, (attacker.posts_count ?? 0) * 0.15)),
       },
       defender: {
-        login: defender.github_login,
+        handle: defender.instagram_handle,
         avatar: defender.avatar_url,
         position: [0, 0, 0] as [number, number, number],
-        height: Math.max(20, Math.min(300, (defender.contributions ?? 0) * 0.15)),
+        height: Math.max(20, Math.min(300, (defender.posts_count ?? 0) * 0.15)),
       },
       xp_earned: xpEarned,
       new_raid_xp: newAttackerXp,

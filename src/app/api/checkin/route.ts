@@ -20,7 +20,7 @@ const STREAK_MILESTONES = [
 
 async function grantStreakReward(
   sb: SupabaseClient,
-  developerId: number,
+  instagrammerId: number,
   streak: number,
 ): Promise<{ milestone: number; item_id: string; item_name: string } | null> {
   // Find highest unclaimed milestone the user qualifies for
@@ -31,7 +31,7 @@ async function grantStreakReward(
     const { data: existing } = await sb
       .from("streak_rewards")
       .select("id")
-      .eq("developer_id", developerId)
+      .eq("instagrammer_id", instagrammerId)
       .eq("milestone", tier.milestone)
       .maybeSingle();
     if (existing) continue;
@@ -40,7 +40,7 @@ async function grantStreakReward(
     const { data: ownedRows } = await sb
       .from("purchases")
       .select("item_id")
-      .eq("developer_id", developerId)
+      .eq("instagrammer_id", instagrammerId)
       .eq("status", "completed");
     const ownedSet = new Set((ownedRows ?? []).map((r: { item_id: string }) => r.item_id));
 
@@ -51,10 +51,10 @@ async function grantStreakReward(
 
     // Grant the item
     await sb.from("purchases").insert({
-      developer_id: developerId,
+      instagrammer_id: instagrammerId,
       item_id: itemId,
       provider: "free",
-      provider_tx_id: `streak_reward_${tier.milestone}_${developerId}`,
+      provider_tx_id: `streak_reward_${tier.milestone}_${instagrammerId}`,
       amount_cents: 0,
       currency: "usd",
       status: "completed",
@@ -62,7 +62,7 @@ async function grantStreakReward(
 
     // Record the reward
     await sb.from("streak_rewards").insert({
-      developer_id: developerId,
+      instagrammer_id: instagrammerId,
       milestone: tier.milestone,
       item_id: itemId,
     });
@@ -75,57 +75,6 @@ async function grantStreakReward(
   }
 
   return null;
-}
-
-// Lightweight GitHub fetch: only current week contributions
-async function fetchWeeklyContributions(login: string): Promise<number | null> {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) return null;
-
-  try {
-    const res = await fetch("https://api.github.com/graphql", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        query: `query($login: String!) {
-          user(login: $login) {
-            contributionsCollection {
-              contributionCalendar {
-                weeks { contributionDays { contributionCount, date } }
-              }
-            }
-          }
-        }`,
-        variables: { login },
-      }),
-    });
-
-    if (!res.ok) return null;
-    const json = await res.json();
-    const weeks = json?.data?.user?.contributionsCollection?.contributionCalendar?.weeks;
-    if (!weeks) return null;
-
-    const now = new Date();
-    const isoWeekStart = new Date(now);
-    const dayOfWeek = now.getDay();
-    isoWeekStart.setDate(now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1));
-    isoWeekStart.setHours(0, 0, 0, 0);
-
-    let total = 0;
-    for (const week of weeks) {
-      for (const day of week.contributionDays ?? []) {
-        if (new Date(day.date) >= isoWeekStart) {
-          total += day.contributionCount;
-        }
-      }
-    }
-    return total;
-  } catch {
-    return null;
-  }
 }
 
 export async function POST() {
@@ -144,32 +93,33 @@ export async function POST() {
     return NextResponse.json({ error: "Too fast" }, { status: 429 });
   }
 
-  const githubLogin = (
+  const instagramHandle = (
     user.user_metadata?.user_name ??
     user.user_metadata?.preferred_username ??
+    user.user_metadata?.name ??
     ""
-  ).toLowerCase();
+  ).toLowerCase().replace(/\s+/g, "");
 
-  if (!githubLogin) {
-    return NextResponse.json({ error: "No GitHub login" }, { status: 400 });
+  if (!instagramHandle) {
+    return NextResponse.json({ error: "No Instagram handle" }, { status: 400 });
   }
 
   const sb = getSupabaseAdmin();
 
-  // Fetch developer (must be claimed)
-  const { data: dev } = await sb
-    .from("developers")
-    .select("id, claimed, contributions, public_repos, total_stars, kudos_count, app_streak, streak_freeze_30d_claimed, last_checkin_date")
-    .eq("github_login", githubLogin)
+  // Fetch instagrammer (must be claimed)
+  const { data: instagrammer } = await sb
+    .from("instagrammers")
+    .select("id, claimed, posts_count, followers_count, following_count, kudos_count, app_streak, streak_freeze_30d_claimed, last_checkin_date")
+    .eq("instagram_handle", instagramHandle)
     .single();
 
-  if (!dev || !dev.claimed) {
+  if (!instagrammer || !instagrammer.claimed) {
     return NextResponse.json({ error: "Must claim building first" }, { status: 403 });
   }
 
   // Perform check-in via RPC
   const { data: result, error: rpcError } = await sb.rpc("perform_checkin", {
-    p_developer_id: dev.id,
+    p_instagrammer_id: instagrammer.id,
   });
 
   if (rpcError) {
@@ -191,11 +141,11 @@ export async function POST() {
   }
 
   // Track activity
-  touchLastActive(dev.id);
-  trackDailyMission(dev.id, "checkin");
+  touchLastActive(instagrammer.id);
+  trackDailyMission(instagrammer.id, "checkin");
 
   // Detect streak broken: previous streak was >= 7, now reset to 1, and freeze didn't save them
-  const previousStreak = dev.app_streak ?? 0;
+  const previousStreak = instagrammer.app_streak ?? 0;
   if (
     checkinResult.checked_in &&
     checkinResult.streak === 1 &&
@@ -203,7 +153,7 @@ export async function POST() {
     !checkinResult.was_frozen
   ) {
     const today = new Date().toISOString().split("T")[0];
-    sendStreakBrokenNotification(dev.id, githubLogin, previousStreak, today);
+    sendStreakBrokenNotification(instagrammer.id, instagramHandle, previousStreak, today);
   }
 
   let newAchievements: string[] = [];
@@ -212,7 +162,7 @@ export async function POST() {
 
   // Grant XP for check-in
   if (checkinResult.checked_in) {
-    const { data: xpData } = await sb.rpc("grant_xp", { p_developer_id: dev.id, p_source: "checkin", p_amount: 10 });
+    const { data: xpData } = await sb.rpc("grant_xp", { p_instagrammer_id: instagrammer.id, p_source: "checkin", p_amount: 10 });
     if (xpData) xpResult = xpData as { granted: number; new_total: number; new_level: number };
   }
 
@@ -222,38 +172,38 @@ export async function POST() {
     const giftsSent = 0;
     const giftsReceived = 0;
 
-    newAchievements = await checkAchievements(dev.id, {
-      contributions: dev.contributions,
-      public_repos: dev.public_repos,
-      total_stars: dev.total_stars,
+    newAchievements = await checkAchievements(instagrammer.id, {
+      posts_count: instagrammer.posts_count,
+      followers_count: instagrammer.followers_count,
+      following_count: instagrammer.following_count,
       referral_count: referralCount,
-      kudos_count: dev.kudos_count ?? 0,
+      kudos_count: instagrammer.kudos_count ?? 0,
       gifts_sent: giftsSent,
       gifts_received: giftsReceived,
       app_streak: checkinResult.streak,
-    }, githubLogin);
+    }, instagramHandle);
 
     // Grant 1 free freeze at 30-day streak milestone
-    if (checkinResult.streak >= 30 && !dev.streak_freeze_30d_claimed) {
-      await sb.rpc("grant_streak_freeze", { p_developer_id: dev.id });
+    if (checkinResult.streak >= 30 && !instagrammer.streak_freeze_30d_claimed) {
+      await sb.rpc("grant_streak_freeze", { p_instagrammer_id: instagrammer.id });
       await sb
-        .from("developers")
+        .from("instagrammers")
         .update({ streak_freeze_30d_claimed: true })
-        .eq("id", dev.id);
+        .eq("id", instagrammer.id);
       await sb.from("streak_freeze_log").insert({
-        developer_id: dev.id,
+        instagrammer_id: instagrammer.id,
         action: "granted_milestone",
       });
     }
 
     // A12: Streak rewards - grant free items at milestones
-    streakReward = await grantStreakReward(sb, dev.id, checkinResult.streak);
+    streakReward = await grantStreakReward(sb, instagrammer.id, checkinResult.streak);
 
     // Streak milestone notifications (7, 30, 100, 365)
     if ([7, 30, 100, 365].includes(checkinResult.streak)) {
       sendStreakMilestoneNotification(
-        dev.id,
-        githubLogin,
+        instagrammer.id,
+        instagramHandle,
         checkinResult.streak,
         checkinResult.longest,
         streakReward?.item_name,
@@ -263,9 +213,9 @@ export async function POST() {
     // Insert feed event
     await sb.from("activity_feed").insert({
       event_type: "streak_checkin",
-      actor_id: dev.id,
+      actor_id: instagrammer.id,
       metadata: {
-        login: githubLogin,
+        handle: instagramHandle,
         streak: checkinResult.streak,
         was_frozen: checkinResult.was_frozen ?? false,
         reward: streakReward?.item_id ?? null,
@@ -273,45 +223,35 @@ export async function POST() {
     });
   }
 
-  // Refresh weekly contributions from GitHub (fire-and-forget, non-blocking)
-  fetchWeeklyContributions(githubLogin).then((weeklyContribs) => {
-    if (weeklyContribs !== null) {
-      sb.from("developers")
-        .update({ current_week_contributions: weeklyContribs })
-        .eq("id", dev.id)
-        .then();
-    }
-  });
-
   // Count unseen achievements
   const { count: unseenCount } = await sb
-    .from("developer_achievements")
+    .from("instagrammer_achievements")
     .select("achievement_id", { count: "exact", head: true })
-    .eq("developer_id", dev.id)
+    .eq("instagrammer_id", instagrammer.id)
     .eq("seen", false);
 
   // Fetch kudos received since last check-in
   const { data: recentKudos } = await sb
-    .from("developer_kudos")
+    .from("instagrammer_kudos")
     .select("giver_id, given_date")
-    .eq("receiver_id", dev.id)
+    .eq("receiver_id", instagrammer.id)
     .order("given_date", { ascending: false })
     .limit(10);
 
-  // Fetch raids targeting this dev since last checkin (raids table may not exist yet)
-  let raidsSinceLast: { attacker_login: string; success: boolean; created_at: string }[] = [];
+  // Fetch raids targeting this instagrammer since last checkin (raids table may not exist yet)
+  let raidsSinceLast: { attacker_handle: string; success: boolean; created_at: string }[] = [];
   try {
-    const lastCheckin = dev.last_checkin_date as string | null;
+    const lastCheckin = instagrammer.last_checkin_date as string | null;
     const { data: recentRaids } = await sb
       .from("raids")
-      .select("attacker_id, success, created_at, attacker:developers!raids_attacker_id_fkey(github_login)")
-      .eq("defender_id", dev.id)
+      .select("attacker_id, success, created_at, attacker:instagrammers!raids_attacker_id_fkey(instagram_handle)")
+      .eq("defender_id", instagrammer.id)
       .gt("created_at", lastCheckin ?? "1970-01-01")
       .order("created_at", { ascending: false })
       .limit(5);
 
     raidsSinceLast = (recentRaids ?? []).map((r) => ({
-      attacker_login: (r.attacker as unknown as { github_login: string })?.github_login ?? "unknown",
+      attacker_handle: (r.attacker as unknown as { instagram_handle: string })?.instagram_handle ?? "unknown",
       success: r.success,
       created_at: r.created_at,
     }));

@@ -5,10 +5,9 @@ import { checkAchievements } from "@/lib/achievements";
 import { cacheEmailFromAuth, touchLastActive, ensurePreferences } from "@/lib/notification-helpers";
 import { sendWelcomeNotification } from "@/lib/notification-senders/welcome";
 import { sendReferralJoinedNotification } from "@/lib/notification-senders/referral";
-import { fetchGitHubDeveloperData } from "@/lib/github-api";
-import { calculateGithubXp } from "@/lib/xp";
+import { calculateInstagramXp } from "@/lib/xp";
 
-// Extend timeout for GitHub API calls during login
+// Extend timeout for Instagram API calls during login
 export const maxDuration = 60;
 
 export async function GET(request: Request) {
@@ -26,144 +25,149 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/?error=auth_failed`);
   }
 
-  const githubLogin = (
+  // Instagram user metadata from OAuth
+  const instagramHandle = (
     data.user.user_metadata.user_name ??
     data.user.user_metadata.preferred_username ??
+    data.user.user_metadata.name ??
     ""
-  ).toLowerCase();
+  ).toLowerCase().replace(/\s+/g, "");
 
   const admin = getSupabaseAdmin();
 
-  if (githubLogin) {
-    // Check if dev already exists in the database
-    const { data: existingDev } = await admin
-      .from("developers")
+  if (instagramHandle) {
+    // Check if instagrammer already exists in the database
+    const { data: existing } = await admin
+      .from("instagrammers")
       .select("id, claimed")
-      .eq("github_login", githubLogin)
+      .eq("instagram_handle", instagramHandle)
       .maybeSingle();
 
-    if (!existingDev) {
-      // ─── New dev: create building from GitHub data on login ───
+    if (!existing) {
+      // ─── New instagrammer: create building from Instagram data on login ───
       try {
-        const ghData = await fetchGitHubDeveloperData(githubLogin, { allowEmpty: true });
+        const igData = {
+          instagram_handle: instagramHandle,
+          display_name: data.user.user_metadata.full_name ?? data.user.user_metadata.name ?? instagramHandle,
+          avatar_url: data.user.user_metadata.avatar_url ?? data.user.user_metadata.picture ?? null,
+          bio: data.user.user_metadata.bio ?? null,
+          posts_count: 0,
+          followers_count: 0,
+          following_count: 0,
+          district: "lifestyle",
+        };
 
         const { data: created, error: createErr } = await admin
-          .from("developers")
+          .from("instagrammers")
           .upsert({
-            ...ghData,
+            ...igData,
             fetched_at: new Date().toISOString(),
             claimed: true,
             claimed_by: data.user.id,
             claimed_at: new Date().toISOString(),
             fetch_priority: 1,
-          }, { onConflict: "github_login" })
+          }, { onConflict: "instagram_handle" })
           .select("id")
           .single();
 
         if (created && !createErr) {
-          // GitHub XP
-          const xp = calculateGithubXp({
-            contributions: ghData.contributions_total ?? ghData.contributions,
-            total_stars: ghData.total_stars,
-            public_repos: ghData.public_repos,
-            total_prs: ghData.total_prs ?? 0,
-          });
+          // Instagram XP
+          const xp = calculateInstagramXp(igData.posts_count, igData.followers_count, igData.following_count);
           if (xp > 0) {
-            await admin.rpc("grant_xp", { p_developer_id: created.id, p_source: "github", p_amount: xp });
-            await admin.from("developers").update({ xp_github: xp }).eq("id", created.id);
+            await admin.rpc("grant_xp", { p_instagrammer_id: created.id, p_source: "instagram", p_amount: xp });
+            await admin.from("instagrammers").update({ xp_instagram: xp }).eq("id", created.id);
           }
 
           // Rank
-          await admin.rpc("assign_new_dev_rank", { dev_id: created.id });
+          await admin.rpc("assign_new_instagrammer_rank", { instagrammer_id: created.id });
           admin.rpc("recalculate_ranks").then(
-            () => console.log("Ranks recalculated for new dev:", githubLogin),
+            () => console.log("Ranks recalculated for new instagrammer:", instagramHandle),
             (err: unknown) => console.error("Rank recalculation failed:", err),
           );
 
           // Feed event
           await admin.from("activity_feed").insert({
-            event_type: "dev_joined",
+            event_type: "instagrammer_joined",
             actor_id: created.id,
-            metadata: { login: githubLogin },
+            metadata: { handle: instagramHandle },
           });
 
           // Notifications
           cacheEmailFromAuth(created.id, data.user.id).catch(() => {});
           ensurePreferences(created.id).catch(() => {});
-          sendWelcomeNotification(created.id, githubLogin);
+          sendWelcomeNotification(created.id, instagramHandle);
         }
       } catch (err) {
-        console.error("Failed to create dev on login:", err);
+        console.error("Failed to create instagrammer on login:", err);
       }
-    } else if (!existingDev.claimed) {
-      // ─── Legacy dev: claim existing unclaimed building ───
+    } else if (!existing.claimed) {
+      // ─── Legacy instagrammer: claim existing unclaimed building ───
       await admin
-        .from("developers")
+        .from("instagrammers")
         .update({
           claimed: true,
           claimed_by: data.user.id,
           claimed_at: new Date().toISOString(),
           fetch_priority: 1,
         })
-        .eq("id", existingDev.id)
+        .eq("id", existing.id)
         .eq("claimed", false);
 
       await admin.from("activity_feed").insert({
-        event_type: "dev_joined",
-        actor_id: existingDev.id,
-        metadata: { login: githubLogin },
+        event_type: "instagrammer_joined",
+        actor_id: existing.id,
+        metadata: { handle: instagramHandle },
       });
 
-      cacheEmailFromAuth(existingDev.id, data.user.id).catch(() => {});
-      ensurePreferences(existingDev.id).catch(() => {});
-      sendWelcomeNotification(existingDev.id, githubLogin);
+      cacheEmailFromAuth(existing.id, data.user.id).catch(() => {});
+      ensurePreferences(existing.id).catch(() => {});
+      sendWelcomeNotification(existing.id, instagramHandle);
     }
 
-    // Fetch dev record for achievement check + referral processing
-    // Uses try-catch to avoid breaking login if v2 columns/tables don't exist yet
+    // Fetch instagrammer record for achievement check + referral processing
     try {
-      const { data: dev } = await admin
-        .from("developers")
-        .select("id, contributions, public_repos, total_stars, kudos_count, referral_count, referred_by")
-        .eq("github_login", githubLogin)
+      const { data: instagrammer } = await admin
+        .from("instagrammers")
+        .select("id, posts_count, followers_count, following_count, kudos_count, referral_count, referred_by")
+        .eq("instagram_handle", instagramHandle)
         .single();
 
-      if (dev) {
+      if (instagrammer) {
         // Cache email + update last_active_at on every login
-        cacheEmailFromAuth(dev.id, data.user.id).catch(() => {});
-        touchLastActive(dev.id);
+        cacheEmailFromAuth(instagrammer.id, data.user.id).catch(() => {});
+        touchLastActive(instagrammer.id);
 
         // Process referral (from ?ref= param forwarded by client)
         const ref = searchParams.get("ref");
-        if (ref && ref !== githubLogin && !dev.referred_by) {
+        if (ref && ref !== instagramHandle && !instagrammer.referred_by) {
           const { data: referrer } = await admin
-            .from("developers")
-            .select("id, github_login")
-            .eq("github_login", ref.toLowerCase())
+            .from("instagrammers")
+            .select("id, instagram_handle")
+            .eq("instagram_handle", ref.toLowerCase())
             .single();
 
           if (referrer) {
             await admin
-              .from("developers")
-              .update({ referred_by: referrer.github_login })
-              .eq("id", dev.id);
+              .from("instagrammers")
+              .update({ referred_by: referrer.instagram_handle })
+              .eq("id", instagrammer.id);
 
-            await admin.rpc("increment_referral_count", { referrer_dev_id: referrer.id });
+            await admin.rpc("increment_referral_count", { referrer_instagrammer_id: referrer.id });
 
             await admin.from("activity_feed").insert({
               event_type: "referral",
               actor_id: referrer.id,
-              target_id: dev.id,
-              metadata: { referrer_login: referrer.github_login, referred_login: githubLogin },
+              target_id: instagrammer.id,
+              metadata: { referrer_handle: referrer.instagram_handle, referred_handle: instagramHandle },
             });
 
             // Notify referrer that their referral joined
-            sendReferralJoinedNotification(referrer.id, referrer.github_login, githubLogin, dev.id);
+            sendReferralJoinedNotification(referrer.id, referrer.instagram_handle, instagramHandle, instagrammer.id);
 
             // Check referral achievements for the referrer
             const { data: referrerFull } = await admin
-              .from("developers")
-              .select("referral_count, kudos_count, contributions, public_repos, total_stars")
+              .from("instagrammers")
+              .select("referral_count, kudos_count, posts_count, followers_count, following_count")
               .eq("id", referrer.id)
               .single();
 
@@ -171,30 +175,30 @@ export async function GET(request: Request) {
               const giftsSent = await countGifts(admin, referrer.id, "sent");
               const giftsReceived = await countGifts(admin, referrer.id, "received");
               await checkAchievements(referrer.id, {
-                contributions: referrerFull.contributions,
-                public_repos: referrerFull.public_repos,
-                total_stars: referrerFull.total_stars,
+                posts_count: referrerFull.posts_count,
+                followers_count: referrerFull.followers_count,
+                following_count: referrerFull.following_count,
                 referral_count: referrerFull.referral_count,
                 kudos_count: referrerFull.kudos_count,
                 gifts_sent: giftsSent,
                 gifts_received: giftsReceived,
-              }, referrer.github_login);
+              }, referrer.instagram_handle);
             }
           }
         }
 
-        // Run achievement check for this developer
-        const giftsSent = await countGifts(admin, dev.id, "sent");
-        const giftsReceived = await countGifts(admin, dev.id, "received");
-        await checkAchievements(dev.id, {
-          contributions: dev.contributions,
-          public_repos: dev.public_repos,
-          total_stars: dev.total_stars,
-          referral_count: dev.referral_count ?? 0,
-          kudos_count: dev.kudos_count ?? 0,
+        // Run achievement check for this instagrammer
+        const giftsSent = await countGifts(admin, instagrammer.id, "sent");
+        const giftsReceived = await countGifts(admin, instagrammer.id, "received");
+        await checkAchievements(instagrammer.id, {
+          posts_count: instagrammer.posts_count,
+          followers_count: instagrammer.followers_count,
+          following_count: instagrammer.following_count,
+          referral_count: instagrammer.referral_count ?? 0,
+          kudos_count: instagrammer.kudos_count ?? 0,
           gifts_sent: giftsSent,
           gifts_received: giftsReceived,
-        }, githubLogin);
+        }, instagramHandle);
       }
     } catch {
       // Silently skip v2 features if tables/columns don't exist yet
@@ -204,30 +208,30 @@ export async function GET(request: Request) {
 
   // Support ?next= param for post-login redirect (e.g. /shop)
   const next = searchParams.get("next");
-  if (next === "/shop" && githubLogin) {
-    const { data: dev } = await admin
-      .from("developers")
-      .select("github_login")
-      .eq("github_login", githubLogin)
+  if (next === "/shop" && instagramHandle) {
+    const { data: ig } = await admin
+      .from("instagrammers")
+      .select("instagram_handle")
+      .eq("instagram_handle", instagramHandle)
       .single();
 
-    if (!dev) {
-      return NextResponse.redirect(`${origin}/?user=${githubLogin}`);
+    if (!ig) {
+      return NextResponse.redirect(`${origin}/?user=${instagramHandle}`);
     }
 
-    return NextResponse.redirect(`${origin}/shop/${githubLogin}`);
+    return NextResponse.redirect(`${origin}/shop/${instagramHandle}`);
   }
 
-  return NextResponse.redirect(`${origin}/?user=${githubLogin}`);
+  return NextResponse.redirect(`${origin}/?user=${instagramHandle}`);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function countGifts(admin: any, devId: number, direction: "sent" | "received"): Promise<number> {
-  const column = direction === "sent" ? "developer_id" : "gifted_to";
+async function countGifts(admin: any, instagrammerId: number, direction: "sent" | "received"): Promise<number> {
+  const column = direction === "sent" ? "instagrammer_id" : "gifted_to";
   const { count } = await admin
     .from("purchases")
     .select("id", { count: "exact", head: true })
-    .eq(column, devId)
+    .eq(column, instagrammerId)
     .eq("status", "completed")
     .not("gifted_to", "is", null);
   return count ?? 0;

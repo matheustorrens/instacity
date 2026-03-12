@@ -16,8 +16,8 @@ import {
   type CityRiver,
   type CityBridge,
   type DistrictZone,
-  type DeveloperRecord,
-} from "@/lib/github";
+  type InstagrammerRecord,
+} from "@/lib/instagram";
 import Image from "next/image";
 import Link from "next/link";
 import ActivityTicker, { type FeedEvent } from "@/components/ActivityTicker";
@@ -151,8 +151,8 @@ function getDevClass(login: string) {
 }
 
 interface CityStats {
-  total_developers: number;
-  total_contributions: number;
+  total_instagrammers: number;
+  total_posts: number;
 }
 
 // Milestones that trigger 24h celebration effects
@@ -160,19 +160,19 @@ const CELEBRATION_MILESTONES = [10000, 15000, 20000, 25000, 30000, 40000, 50000,
 
 // ─── Loading phases for search feedback ─────────────────────
 const LOADING_PHASES = [
-  { delay: 0, text: "Fetching GitHub profile..." },
-  { delay: 2000, text: "Analyzing contributions..." },
+  { delay: 0, text: "Fetching Instagram profile..." },
+  { delay: 2000, text: "Analyzing posts..." },
   { delay: 5000, text: "Building the city block..." },
   { delay: 9000, text: "Almost there..." },
-  { delay: 13000, text: "This one's a big profile. Hang tight..." },
+  { delay: 13000, text: "This is a big profile. Hang tight..." },
 ];
 
 // Errors that won't change if you retry the same username
-const PERMANENT_ERROR_CODES = new Set(["not-found", "org", "no-activity"]);
+const PERMANENT_ERROR_CODES = new Set(["not-found", "private", "no-activity"]);
 
 const ERROR_MESSAGES: Record<string, { primary: (u: string) => string; secondary: string; hasRetry?: boolean; hasLink?: boolean }> = {
   "not-found": {
-    primary: (u) => `"@${u}" doesn't exist on GitHub`,
+    primary: (u) => `"@${u}" doesn't exist on Instagram`,
     secondary: "Check the spelling — could be a typo. GitHub usernames are case-insensitive.",
   },
   "org": {
@@ -292,9 +292,9 @@ function SearchFeedback({
 }
 
 const LEADERBOARD_CATEGORIES = [
-  { label: "Contributors", key: "contributions" as const, tab: "contributors" },
-  { label: "Stars", key: "total_stars" as const, tab: "stars" },
-  { label: "Repos", key: "public_repos" as const, tab: "architects" },
+  { label: "Posts", key: "posts_count" as const, tab: "posters" },
+  { label: "Following", key: "following_count" as const, tab: "following" },
+  { label: "Followers", key: "followers_count" as const, tab: "followers" },
 ] as const;
 
 function MiniLeaderboard({ buildings, accent }: { buildings: CityBuilding[]; accent: string }) {
@@ -383,7 +383,7 @@ function HomeContent() {
   const failedUsernamesRef = useRef<Map<string, string>>(new Map()); // username -> error code
   const [buildings, setBuildings] = useState<CityBuilding[]>([]);
   // Keep raw dev records so we can inject new devs and regenerate layout locally
-  const rawDevsRef = useRef<DeveloperRecord[]>([]);
+  const rawInstagrammersRef = useRef<InstagrammerRecord[]>([]);
   const [plazas, setPlazas] = useState<CityPlaza[]>([]);
   const [decorations, setDecorations] = useState<CityDecoration[]>([]);
   const [river, setRiver] = useState<CityRiver | null>(null);
@@ -431,12 +431,12 @@ function HomeContent() {
   const flyPausedAt = useRef(0);
   const flyTotalPauseMs = useRef(0);
   const [flyElapsedSec, setFlyElapsedSec] = useState(0);
-  const [stats, setStats] = useState<CityStats>({ total_developers: 0, total_contributions: 0 });
+  const [stats, setStats] = useState<CityStats>({ total_instagrammers: 0, total_posts: 0 });
   const [milestoneCelebrations, setMilestoneCelebrations] = useState<{ milestone: number; reached_at: string }[]>([]);
   const [focusedBuilding, setFocusedBuilding] = useState<string | null>(null);
   const [shareData, setShareData] = useState<{
-    login: string;
-    contributions: number;
+    handle: string;
+    posts_count: number;
     rank: number | null;
     avatar_url: string | null;
   } | null>(null);
@@ -613,14 +613,14 @@ function HomeContent() {
       setSession(s);
       if (s) {
         const login = (s.user?.user_metadata?.user_name ?? s.user?.user_metadata?.preferred_username ?? "").toLowerCase();
-        if (login) identifyUser({ github_login: login, email: s.user?.email ?? undefined });
+        if (login) identifyUser({ instagram_handle: login, email: s.user?.email ?? undefined });
       }
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, s: Session | null) => {
       setSession(s);
       if (s && event !== "TOKEN_REFRESHED") {
         const login = (s.user?.user_metadata?.user_name ?? s.user?.user_metadata?.preferred_username ?? "").toLowerCase();
-        if (login) identifyUser({ github_login: login, email: s.user?.email ?? undefined });
+        if (login) identifyUser({ instagram_handle: login, email: s.user?.email ?? undefined });
       }
     });
     return () => subscription.unsubscribe();
@@ -1022,7 +1022,7 @@ function HomeContent() {
     if (bustCache) clearCityCache();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let allDevs: any[] = [];
+    let allInstagrammers: any[] = [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let cityStats: any = null;
 
@@ -1034,25 +1034,25 @@ function HomeContent() {
         const snapshotRes = await fetch(snapshotUrl);
         if (snapshotRes.ok) {
           const snapshot = await snapshotRes.json();
-          allDevs = snapshot.developers;
+          allInstagrammers = snapshot.instagrammers;
           cityStats = snapshot.stats;
         }
       } catch { /* fall through to chunked */ }
     }
 
     // Fetch from API (primary when busting cache, fallback otherwise)
-    if (allDevs.length === 0) {
+    if (allInstagrammers.length === 0) {
       const cbParam = bustCache ? `&_t=${Date.now()}` : "";
       const CHUNK = 1000;
       const res = await fetch(`/api/city?from=0&to=${CHUNK}${cbParam}`);
       if (!res.ok) return null;
       const data = await res.json();
-      allDevs = data.developers ?? [];
+      allInstagrammers = data.instagrammers ?? [];
       cityStats = data.stats;
 
-      const total = cityStats?.total_developers ?? 0;
-      if (total > CHUNK && allDevs.length > 0) {
-        const promises: Promise<{ developers: typeof data.developers } | null>[] = [];
+      const total = cityStats?.total_instagrammers ?? 0;
+      if (total > CHUNK && allInstagrammers.length > 0) {
+        const promises: Promise<{ instagrammers: typeof data.instagrammers } | null>[] = [];
         for (let from = CHUNK; from < total; from += CHUNK) {
           promises.push(
             fetch(`/api/city?from=${from}&to=${from + CHUNK}${cbParam}`)
@@ -1061,14 +1061,14 @@ function HomeContent() {
         }
         const results = await Promise.all(promises);
         for (const chunk of results) {
-          if (chunk?.developers?.length) {
-            allDevs = [...allDevs, ...chunk.developers];
+          if (chunk?.instagrammers?.length) {
+            allInstagrammers = [...allInstagrammers, ...chunk.instagrammers];
           }
         }
       }
     }
 
-    if (allDevs.length === 0) return null;
+    if (allInstagrammers.length === 0) return null;
 
     // Apply loadout override from localStorage (saved in shop, TTL 10 min)
     try {
@@ -1076,9 +1076,9 @@ function HomeContent() {
       if (raw) {
         const { developerId, loadout, ts } = JSON.parse(raw);
         if (Date.now() - ts < 10 * 60 * 1000) {
-          const idx = allDevs.findIndex((d) => d.id === developerId);
+          const idx = allInstagrammers.findIndex((d) => d.id === developerId);
           if (idx !== -1) {
-            allDevs[idx] = { ...allDevs[idx], loadout };
+            allInstagrammers[idx] = { ...allInstagrammers[idx], loadout };
           }
         } else {
           localStorage.removeItem("gitcity:loadout_override");
@@ -1086,16 +1086,16 @@ function HomeContent() {
       }
     } catch { }
 
-    rawDevsRef.current = allDevs;
+    rawInstagrammersRef.current = allInstagrammers;
     setStats(cityStats);
-    const layout = generateCityLayout(allDevs);
+    const layout = generateCityLayout(allInstagrammers);
     setBuildings(layout.buildings);
     setPlazas(layout.plazas);
     setDecorations(layout.decorations);
     setRiver(layout.river);
     setBridges(layout.bridges);
     setDistrictZones(layout.districtZones);
-    setCityCache({ ...layout, stats: cityStats, rawDevs: rawDevsRef.current });
+    setCityCache({ ...layout, stats: cityStats, rawInstagrammers: rawInstagrammersRef.current });
     return layout.buildings;
   }, []);
 
@@ -1124,7 +1124,7 @@ function HomeContent() {
     // Return visit: restore from cache or fetch silently
     const cached = getCityCache();
     if (cached) {
-      rawDevsRef.current = cached.rawDevs ?? [];
+      rawInstagrammersRef.current = cached.rawInstagrammers ?? [];
       setBuildings(cached.buildings);
       setPlazas(cached.plazas);
       setDecorations(cached.decorations);
@@ -1156,7 +1156,7 @@ function HomeContent() {
         setLoadProgress(10);
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let allDevs: any[] = [];
+        let allInstagrammers: any[] = [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         let cityStats: any = null;
 
@@ -1167,23 +1167,23 @@ function HomeContent() {
           const snapshotRes = await fetch(snapshotUrl);
           if (snapshotRes.ok) {
             const snapshot = await snapshotRes.json();
-            allDevs = snapshot.developers;
+            allInstagrammers = snapshot.instagrammers;
             cityStats = snapshot.stats;
           }
         } catch { /* fall through to chunked */ }
 
         // Fallback to chunked API
-        if (allDevs.length === 0) {
+        if (allInstagrammers.length === 0) {
           const CHUNK = 1000;
           const res = await fetch(`/api/city?from=0&to=${CHUNK}`);
           if (!res.ok) throw new Error("Failed to fetch city data");
           const data = await res.json();
-          allDevs = data.developers ?? [];
+          allInstagrammers = data.instagrammers ?? [];
           cityStats = data.stats;
 
-          const total = cityStats?.total_developers ?? 0;
-          if (total > CHUNK && allDevs.length > 0) {
-            const promises: Promise<{ developers: typeof data.developers } | null>[] = [];
+          const total = cityStats?.total_instagrammers ?? 0;
+          if (total > CHUNK && allInstagrammers.length > 0) {
+            const promises: Promise<{ instagrammers: typeof data.instagrammers } | null>[] = [];
             for (let from = CHUNK; from < total; from += CHUNK) {
               promises.push(
                 fetch(`/api/city?from=${from}&to=${from + CHUNK}`)
@@ -1192,8 +1192,8 @@ function HomeContent() {
             }
             const results = await Promise.all(promises);
             for (const chunk of results) {
-              if (chunk?.developers?.length) {
-                allDevs = [...allDevs, ...chunk.developers];
+              if (chunk?.instagrammers?.length) {
+                allInstagrammers = [...allInstagrammers, ...chunk.instagrammers];
               }
             }
           }
@@ -1201,7 +1201,7 @@ function HomeContent() {
 
         setLoadProgress(30);
 
-        if (!allDevs || allDevs.length === 0) {
+        if (!allInstagrammers || allInstagrammers.length === 0) {
           setLoadProgress(100);
           setLoadStage("ready");
           return;
@@ -1213,9 +1213,9 @@ function HomeContent() {
           if (raw) {
             const { developerId, loadout, ts } = JSON.parse(raw);
             if (Date.now() - ts < 10 * 60 * 1000) {
-              const idx = allDevs.findIndex((d) => d.id === developerId);
+              const idx = allInstagrammers.findIndex((d) => d.id === developerId);
               if (idx !== -1) {
-                allDevs[idx] = { ...allDevs[idx], loadout };
+                allInstagrammers[idx] = { ...allInstagrammers[idx], loadout };
               }
             } else {
               localStorage.removeItem("gitcity:loadout_override");
@@ -1228,9 +1228,9 @@ function HomeContent() {
         setLoadProgress(45);
         await new Promise((r) => setTimeout(r, 0)); // yield to browser
 
-        rawDevsRef.current = allDevs;
+        rawInstagrammersRef.current = allInstagrammers;
         setStats(cityStats);
-        const finalLayout = generateCityLayout(allDevs);
+        const finalLayout = generateCityLayout(allInstagrammers);
         setBuildings(finalLayout.buildings);
         setPlazas(finalLayout.plazas);
         setDecorations(finalLayout.decorations);
@@ -1260,7 +1260,7 @@ function HomeContent() {
         setLoadProgress(80);
 
         // Save to cache for return visits
-        setCityCache({ ...finalLayout, stats: cityStats, rawDevs: rawDevsRef.current });
+        setCityCache({ ...finalLayout, stats: cityStats, rawInstagrammers: rawInstagrammersRef.current });
         setLoadProgress(95);
 
         // Enforce minimum 800ms display time to avoid flash
@@ -1352,7 +1352,7 @@ function HomeContent() {
           if (devData.exists === false) return;
 
           // Dedup: another effect may have already injected this dev
-          if (rawDevsRef.current.some((d: DeveloperRecord) => d.github_login.toLowerCase() === userParam.toLowerCase())) return;
+          if (rawInstagrammersRef.current.some((d: InstagrammerRecord) => d.instagram_handle.toLowerCase() === userParam.toLowerCase())) return;
 
           const newDev = {
             ...devData,
@@ -1370,15 +1370,15 @@ function HomeContent() {
             xp_total: devData.xp_total ?? 0,
             xp_level: devData.xp_level ?? 1,
           };
-          rawDevsRef.current = [...rawDevsRef.current, newDev];
-          const layout = generateCityLayout(rawDevsRef.current);
+          rawInstagrammersRef.current = [...rawInstagrammersRef.current, newDev];
+          const layout = generateCityLayout(rawInstagrammersRef.current);
           setBuildings(layout.buildings);
           setPlazas(layout.plazas);
           setDecorations(layout.decorations);
           setRiver(layout.river);
           setBridges(layout.bridges);
           setDistrictZones(layout.districtZones);
-          setCityCache({ ...layout, stats: stats ?? { total_developers: 0, total_contributions: 0 }, rawDevs: rawDevsRef.current });
+          setCityCache({ ...layout, stats: stats ?? { total_instagrammers: 0, total_posts: 0 }, rawInstagrammers: rawInstagrammersRef.current });
         } finally {
           fetchingUserParam.current = false;
         }
@@ -1424,7 +1424,7 @@ function HomeContent() {
         if (devData.exists === false) return;
 
         // Dedup: another effect or search may have already injected this dev
-        if (rawDevsRef.current.some((d: DeveloperRecord) => d.github_login.toLowerCase() === authLogin)) return;
+        if (rawInstagrammersRef.current.some((d: InstagrammerRecord) => d.instagram_handle.toLowerCase() === authLogin)) return;
 
         const newDev = {
           ...devData,
@@ -1442,15 +1442,15 @@ function HomeContent() {
           xp_total: devData.xp_total ?? 0,
           xp_level: devData.xp_level ?? 1,
         };
-        rawDevsRef.current = [...rawDevsRef.current, newDev];
-        const layout = generateCityLayout(rawDevsRef.current);
+        rawInstagrammersRef.current = [...rawInstagrammersRef.current, newDev];
+        const layout = generateCityLayout(rawInstagrammersRef.current);
         setBuildings(layout.buildings);
         setPlazas(layout.plazas);
         setDecorations(layout.decorations);
         setRiver(layout.river);
         setBridges(layout.bridges);
         setDistrictZones(layout.districtZones);
-        setCityCache({ ...layout, stats: stats ?? { total_developers: 0, total_contributions: 0 }, rawDevs: rawDevsRef.current });
+        setCityCache({ ...layout, stats: stats ?? { total_instagrammers: 0, total_posts: 0 }, rawInstagrammers: rawInstagrammersRef.current });
       } catch {
         // Allow retry on next dep change (e.g. transient network error)
         ensuringAuthBuilding.current = null;
@@ -1600,9 +1600,9 @@ function HomeContent() {
 
       // Merge the refreshed dev back into the live city so searches update stats immediately
       let updatedBuildings: CityBuilding[] | null = null;
-      const refreshedLogin = (devData.github_login ?? trimmed).toLowerCase();
-      const existingDev = rawDevsRef.current.find(
-        (d) => d.github_login?.toLowerCase() === refreshedLogin
+      const refreshedLogin = (devData.instagram_handle ?? trimmed).toLowerCase();
+      const existingDev = rawInstagrammersRef.current.find(
+        (d) => d.instagram_handle?.toLowerCase() === refreshedLogin
       );
       const eAny = existingDev as any;
       const syncedDev = {
@@ -1622,24 +1622,24 @@ function HomeContent() {
         xp_total: devData.xp_total ?? existingDev?.xp_total ?? 0,
         xp_level: devData.xp_level ?? existingDev?.xp_level ?? 1,
       };
-      rawDevsRef.current = existedBefore
-        ? rawDevsRef.current.map((d) =>
-            d.github_login?.toLowerCase() === refreshedLogin ? syncedDev : d
+      rawInstagrammersRef.current = existedBefore
+        ? rawInstagrammersRef.current.map((d) =>
+            d.instagram_handle?.toLowerCase() === refreshedLogin ? syncedDev : d
           )
-        : [...rawDevsRef.current, syncedDev];
+        : [...rawInstagrammersRef.current, syncedDev];
 
-      const layout = generateCityLayout(rawDevsRef.current);
+      const layout = generateCityLayout(rawInstagrammersRef.current);
       setBuildings(layout.buildings);
       setPlazas(layout.plazas);
       setDecorations(layout.decorations);
       setRiver(layout.river);
       setBridges(layout.bridges);
       setDistrictZones(layout.districtZones);
-      setCityCache({ ...layout, stats: stats ?? { total_developers: 0, total_contributions: 0 }, rawDevs: rawDevsRef.current });
+      setCityCache({ ...layout, stats: stats ?? { total_instagrammers: 0, total_posts: 0 }, rawInstagrammers: rawInstagrammersRef.current });
       updatedBuildings = layout.buildings;
 
       // Focus camera on the searched building
-      setFocusedBuilding(devData.github_login);
+      setFocusedBuilding(devData.instagram_handle);
 
       // A8: Ghost preview — if user searched for themselves, show temporary effect
       if (
@@ -1648,7 +1648,7 @@ function HomeContent() {
         !ghostPreviewShownRef.current
       ) {
         ghostPreviewShownRef.current = true;
-        setGhostPreviewLogin(devData.github_login);
+        setGhostPreviewLogin(devData.instagram_handle);
         setTimeout(() => setGhostPreviewLogin(null), 4000);
       }
 
@@ -1672,17 +1672,17 @@ function HomeContent() {
           }
         }
       } else if (!existedBefore) {
-        // New developer: show the share modal
+        // New instagrammer: show the share modal
         setShareData({
-          login: devData.github_login,
-          contributions: devData.contributions,
+          handle: devData.instagram_handle,
+          posts_count: devData.posts_count,
           rank: devData.rank,
           avatar_url: devData.avatar_url,
         });
         if (foundBuilding) setSelectedBuilding(foundBuilding);
         setCopied(false);
       } else if (foundBuilding) {
-        // Existing developer: enter explore mode and show profile card
+        // Existing instagrammer: enter explore mode and show profile card
         setSelectedBuilding(foundBuilding);
         setExploreMode(true);
       }
@@ -1801,14 +1801,14 @@ function HomeContent() {
 
   const celebrationActive = useMemo(() => {
     if (forceCelebrate) return true;
-    if (stats.total_developers < CELEBRATION_MILESTONES[0]) return false;
-    const current = [...CELEBRATION_MILESTONES].reverse().find((m) => stats.total_developers >= m);
+    if (stats.total_instagrammers < CELEBRATION_MILESTONES[0]) return false;
+    const current = [...CELEBRATION_MILESTONES].reverse().find((m) => stats.total_instagrammers >= m);
     if (!current) return false;
     const record = milestoneCelebrations.find((c) => c.milestone === current);
     if (!record) return true;
     const elapsed = Date.now() - new Date(record.reached_at).getTime();
     return elapsed < 24 * 60 * 60 * 1000;
-  }, [stats.total_developers, milestoneCelebrations, forceCelebrate]);
+  }, [stats.total_instagrammers, milestoneCelebrations, forceCelebrate]);
 
   // Fetch milestone celebrations on mount
   useEffect(() => {
@@ -1820,15 +1820,15 @@ function HomeContent() {
 
   // Record milestone when crossed
   useEffect(() => {
-    if (stats.total_developers < CELEBRATION_MILESTONES[0]) return;
-    const current = [...CELEBRATION_MILESTONES].reverse().find((m) => stats.total_developers >= m);
+    if (stats.total_instagrammers < CELEBRATION_MILESTONES[0]) return;
+    const current = [...CELEBRATION_MILESTONES].reverse().find((m) => stats.total_instagrammers >= m);
     if (!current) return;
     const alreadyRecorded = milestoneCelebrations.some((c) => c.milestone === current);
     if (alreadyRecorded) return;
     fetch("/api/milestone-celebration", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ total_developers: stats.total_developers }),
+      body: JSON.stringify({ total_instagrammers: stats.total_instagrammers }),
     })
       .then((r) => r.json())
       .then((data) => {
@@ -1840,7 +1840,7 @@ function HomeContent() {
         }
       })
       .catch(() => { });
-  }, [stats.total_developers, milestoneCelebrations]);
+  }, [stats.total_instagrammers, milestoneCelebrations]);
 
   // Feature 1: Daily Challenge Nudge — show after load if user has history but hasn't played today
   useEffect(() => {
@@ -2545,14 +2545,14 @@ function HomeContent() {
                 </button>
                 {codingPanelOpen && (() => {
                   // Creator always first, then up to 4 others
-                  const allDevs = Array.from(liveByLogin.values());
-                  const creator = allDevs.find((d) => d.githubLogin.toLowerCase() === "srizzon");
-                  const others = allDevs.filter((d) => d.githubLogin.toLowerCase() !== "srizzon");
+                  const allInstagrammers = Array.from(liveByLogin.values());
+                  const creator = allInstagrammers.find((d) => d.githubLogin.toLowerCase() === "srizzon");
+                  const others = allInstagrammers.filter((d) => d.githubLogin.toLowerCase() !== "srizzon");
                   const displayDevs = [
                     ...(creator ? [creator] : []),
                     ...others.slice(0, creator ? 4 : 5),
                   ];
-                  const remaining = allDevs.length - displayDevs.length;
+                  const remaining = allInstagrammers.length - displayDevs.length;
 
                   return (
                     <div className="absolute right-0 top-full mt-1 w-80 border-[3px] border-border bg-bg/95 backdrop-blur-sm">
@@ -2962,8 +2962,8 @@ function HomeContent() {
                 <span style={{ color: theme.accent }}>City</span>
               </h1>
               <p className="mt-2 text-[10px] leading-relaxed text-cream/80 normal-case">
-                {stats.total_developers > 0
-                  ? `A city of ${stats.total_developers.toLocaleString()} GitHub developers. Find yourself.`
+                {stats.total_instagrammers > 0
+                  ? `A city of ${stats.total_instagrammers.toLocaleString()} GitHub developers. Find yourself.`
                   : "A global city of GitHub developers. Find yourself."}
               </p>
               <p className="pointer-events-auto mt-1 text-[9px] text-cream/50 normal-case hidden sm:block">
@@ -3035,7 +3035,7 @@ function HomeContent() {
                 // ── Total Developers mode ──
                 (() => {
                   const MILESTONES = [10000, 20000, 50000, 100000];
-                  const count = stats.total_developers;
+                  const count = stats.total_instagrammers;
                   if (count <= 0) return null;
 
                   const target = MILESTONES.find((m) => count < m);
@@ -3712,9 +3712,9 @@ function HomeContent() {
               <div className="grid grid-cols-3 gap-px bg-border/30 mx-4 mb-3 border border-border/50">
                 {[
                   { label: "Rank", value: `#${selectedBuilding.rank}` },
-                  { label: "Contribs", value: selectedBuilding.contributions.toLocaleString() },
-                  { label: "Repos", value: selectedBuilding.public_repos.toLocaleString() },
-                  { label: "Stars", value: selectedBuilding.total_stars.toLocaleString() },
+                  { label: "Posts", value: selectedBuilding.posts_count.toLocaleString() },
+                  { label: "Followers", value: selectedBuilding.followers_count.toLocaleString() },
+                  { label: "Following", value: selectedBuilding.following_count.toLocaleString() },
                   { label: "Kudos", value: (selectedBuilding.kudos_count ?? 0).toLocaleString() },
                   { label: "Visits", value: (selectedBuilding.visit_count ?? 0).toLocaleString() },
                 ].map((s) => (
@@ -4060,9 +4060,9 @@ function HomeContent() {
       {comparePair && (() => {
         const compareStatDefs: { label: string; key: keyof CityBuilding; invert?: boolean }[] = [
           { label: "Rank", key: "rank", invert: true },
-          { label: "Contributions", key: "contributions" },
-          { label: "Stars", key: "total_stars" },
-          { label: "Repos", key: "public_repos" },
+          { label: "Posts", key: "posts_count" },
+          { label: "Following", key: "following_count" },
+          { label: "Followers", key: "followers_count" },
           { label: "Kudos", key: "kudos_count" },
         ];
         let totalAWins = 0;
@@ -4333,7 +4333,7 @@ function HomeContent() {
             {shareData.avatar_url && (
               <Image
                 src={shareData.avatar_url}
-                alt={shareData.login}
+                alt={shareData.handle}
                 width={48}
                 height={48}
                 className="mx-auto mb-3 border-2 border-border"
@@ -4342,13 +4342,13 @@ function HomeContent() {
             )}
 
             <p className="text-xs text-cream normal-case">
-              <span style={{ color: theme.accent }}>@{shareData.login}</span> joined the city!
+              <span style={{ color: theme.accent }}>@{shareData.handle}</span> joined the city!
             </p>
 
             <p className="mt-2 text-[10px] text-muted normal-case">
               Rank <span style={{ color: theme.accent }}>#{shareData.rank ?? "?"}</span>
               {" · "}
-              <span style={{ color: theme.accent }}>{shareData.contributions.toLocaleString()}</span> contributions
+              <span style={{ color: theme.accent }}>{shareData.posts_count.toLocaleString()}</span> posts
             </p>
 
             {/* Buttons */}
@@ -4357,7 +4357,7 @@ function HomeContent() {
                 onClick={() => {
                   if (!selectedBuilding && shareData) {
                     const b = buildings.find(
-                      (b) => b.login.toLowerCase() === shareData.login.toLowerCase()
+                      (b) => b.login.toLowerCase() === shareData.handle.toLowerCase()
                     );
                     if (b) setSelectedBuilding(b);
                   }
@@ -4375,9 +4375,9 @@ function HomeContent() {
 
               <a
                 href={`https://x.com/intent/tweet?text=${encodeURIComponent(
-                  `My GitHub just turned into a building. ${shareData.contributions.toLocaleString()} contributions, Rank #${shareData.rank ?? "?"}. What does yours look like?`
+                  `My Instagram just turned into a building. ${shareData.posts_count.toLocaleString()} posts, Rank #${shareData.rank ?? "?"}. What does yours look like?`
                 )}&url=${encodeURIComponent(
-                  `${window.location.origin}/dev/${shareData.login}`
+                  `${window.location.origin}/dev/${shareData.handle}`
                 )}`}
                 target="_blank"
                 rel="noopener noreferrer"
@@ -4391,7 +4391,7 @@ function HomeContent() {
                 onClick={() => {
                   trackShareClicked("copy_link");
                   navigator.clipboard.writeText(
-                    `${window.location.origin}/dev/${shareData.login}`
+                    `${window.location.origin}/dev/${shareData.handle}`
                   );
                   setCopied(true);
                   setTimeout(() => setCopied(false), 2000);
@@ -4404,7 +4404,7 @@ function HomeContent() {
 
             {/* View profile link */}
             <a
-              href={`/dev/${shareData.login}`}
+              href={`/dev/${shareData.handle}`}
               className="mt-4 inline-block text-[9px] text-muted transition-colors hover:text-cream normal-case"
             >
               View full profile &rarr;

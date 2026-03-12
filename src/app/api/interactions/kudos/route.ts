@@ -16,9 +16,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
-  const { receiver_login } = await request.json();
-  if (!receiver_login || typeof receiver_login !== "string") {
-    return NextResponse.json({ error: "Missing receiver_login" }, { status: 400 });
+  const { receiver_handle } = await request.json();
+  if (!receiver_handle || typeof receiver_handle !== "string") {
+    return NextResponse.json({ error: "Missing receiver_handle" }, { status: 400 });
   }
 
   // Per-user rate limit: 1 req/sec
@@ -29,17 +29,18 @@ export async function POST(request: Request) {
 
   const admin = getSupabaseAdmin();
 
-  const githubLogin = (
+  const instagramHandle = (
     user.user_metadata.user_name ??
     user.user_metadata.preferred_username ??
+    user.user_metadata.name ??
     ""
-  ).toLowerCase();
+  ).toLowerCase().replace(/\s+/g, "");
 
   // Fetch giver (must have claimed building)
   const { data: giver } = await admin
-    .from("developers")
-    .select("id, claimed, contributions, public_repos, total_stars, kudos_count, kudos_streak, last_kudos_given_date")
-    .eq("github_login", githubLogin)
+    .from("instagrammers")
+    .select("id, claimed, posts_count, followers_count, following_count, kudos_count, kudos_streak, last_kudos_given_date")
+    .eq("instagram_handle", instagramHandle)
     .single();
 
   if (!giver || !giver.claimed) {
@@ -48,9 +49,9 @@ export async function POST(request: Request) {
 
   // Fetch receiver
   const { data: receiver } = await admin
-    .from("developers")
-    .select("id, claimed, github_login")
-    .eq("github_login", receiver_login.toLowerCase())
+    .from("instagrammers")
+    .select("id, claimed, instagram_handle")
+    .eq("instagram_handle", receiver_handle.toLowerCase())
     .single();
 
   if (!receiver) {
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
   // Check daily limit (5/day)
   const today = new Date().toISOString().split("T")[0];
   const { count } = await admin
-    .from("developer_kudos")
+    .from("instagrammer_kudos")
     .select("giver_id", { count: "exact", head: true })
     .eq("giver_id", giver.id)
     .eq("given_date", today);
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
 
   // Insert (ON CONFLICT DO NOTHING via PK constraint)
   const { error: insertError } = await admin
-    .from("developer_kudos")
+    .from("instagrammer_kudos")
     .insert({
       giver_id: giver.id,
       receiver_id: receiver.id,
@@ -95,19 +96,19 @@ export async function POST(request: Request) {
 
   // Only increment + feed if the insert actually happened (no conflict)
   if (!insertError) {
-    await admin.rpc("increment_kudos_count", { target_dev_id: receiver.id });
+    await admin.rpc("increment_kudos_count", { target_instagrammer_id: receiver.id });
 
     // Grant XP: giver gets 3, receiver gets 1
-    admin.rpc("grant_xp", { p_developer_id: giver.id, p_source: "kudos_given", p_amount: 3 }).then();
-    admin.rpc("grant_xp", { p_developer_id: receiver.id, p_source: "kudos_received", p_amount: 1 }).then();
+    admin.rpc("grant_xp", { p_instagrammer_id: giver.id, p_source: "kudos_given", p_amount: 3 }).then();
+    admin.rpc("grant_xp", { p_instagrammer_id: receiver.id, p_source: "kudos_received", p_amount: 1 }).then();
 
     await admin.from("activity_feed").insert({
       event_type: "kudos_given",
       actor_id: giver.id,
       target_id: receiver.id,
       metadata: {
-        giver_login: githubLogin,
-        receiver_login: receiver.github_login,
+        giver_handle: instagramHandle,
+        receiver_handle: receiver.instagram_handle,
       },
     });
 
@@ -125,7 +126,7 @@ export async function POST(request: Request) {
     }
 
     await admin
-      .from("developers")
+      .from("instagrammers")
       .update({ kudos_streak: newKudosStreak, last_kudos_given_date: today })
       .eq("id", giver.id);
 
@@ -142,15 +143,15 @@ export async function POST(request: Request) {
 
     // Check kudos streak achievements
     await checkAchievements(giver.id, {
-      contributions: giver.contributions ?? 0,
-      public_repos: giver.public_repos ?? 0,
-      total_stars: giver.total_stars ?? 0,
+      posts_count: giver.posts_count ?? 0,
+      followers_count: giver.followers_count ?? 0,
+      following_count: giver.following_count ?? 0,
       referral_count: 0,
       kudos_count: giver.kudos_count ?? 0,
       gifts_sent: 0,
       gifts_received: 0,
       kudos_streak: newKudosStreak,
-    }, githubLogin);
+    }, instagramHandle);
   }
 
   return NextResponse.json({ ok: true });

@@ -6,7 +6,7 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getOwnedItems } from "@/lib/items";
 import type { ShopItem } from "@/lib/items";
-import { calcBuildingDims } from "@/lib/github";
+import { calcBuildingDims } from "@/lib/instagram";
 import ShopClient from "@/components/ShopClient";
 
 interface Props {

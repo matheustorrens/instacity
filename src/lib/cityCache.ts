@@ -5,7 +5,7 @@ import type {
   CityRiver,
   CityBridge,
   DistrictZone,
-} from "@/lib/github";
+} from "@/lib/instagram";
 
 interface CityCache {
   buildings: CityBuilding[];
@@ -14,9 +14,9 @@ interface CityCache {
   river: CityRiver | null;
   bridges: CityBridge[];
   districtZones: DistrictZone[];
-  stats: { total_developers: number; total_contributions: number };
+  stats: { total_instagrammers: number; total_posts: number };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  rawDevs: any[];
+  rawInstagrammers: any[];
   timestamp: number;
 }
 

@@ -14,20 +14,19 @@ import { rankFromLevel, tierFromLevel } from "@/lib/xp";
 export const revalidate = 300; // ISR: regenerate every 5 min
 
 export const metadata: Metadata = {
-  title: "Leaderboard - Git City",
+  title: "Leaderboard - InstaCity",
   description:
-    "Top GitHub developers ranked by contributions, stars, repos, achievements, and referrals in Git City.",
+    "Top Instagram creators ranked by posts, followers, following, achievements, and referrals in InstaCity.",
 };
 
-interface Developer {
-  github_login: string;
+interface Instagrammer {
+  instagram_handle: string;
   name: string | null;
   avatar_url: string | null;
-  contributions: number;
-  contributions_total: number | null;
-  total_stars: number;
-  public_repos: number;
-  primary_language: string | null;
+  posts_count: number;
+  followers_count: number;
+  following_count: number;
+  niche: string | null;
   rank: number | null;
   referral_count: number;
   kudos_count: number;
@@ -36,12 +35,12 @@ interface Developer {
   xp_level?: number;
 }
 
-type TabId = "contributors" | "stars" | "architects" | "achievers" | "recruiters" | "xp";
+type TabId = "posters" | "followers" | "following" | "achievers" | "recruiters" | "xp";
 
 const TABS: { id: TabId; label: string; metric: string }[] = [
-  { id: "contributors", label: "Contributors", metric: "contributions" },
-  { id: "stars", label: "Stars", metric: "total_stars" },
-  { id: "architects", label: "Architects", metric: "public_repos" },
+  { id: "posters", label: "Posts", metric: "posts_count" },
+  { id: "followers", label: "Followers", metric: "followers_count" },
+  { id: "following", label: "Following", metric: "following_count" },
   { id: "achievers", label: "Achievers", metric: "achievements" },
   { id: "recruiters", label: "Recruiters", metric: "referral_count" },
   { id: "xp", label: "XP", metric: "xp_total" },
@@ -63,118 +62,118 @@ export default async function LeaderboardPage({
 }) {
   const params = await searchParams;
   const mode = params.mode ?? "developers";
-  const activeTab = (params.tab ?? "contributors") as TabId;
+  const activeTab = (params.tab ?? "posters") as TabId;
 
   const supabase = getSupabaseAdmin();
 
-  // Fetch devs sorted by the active metric
-  // Contributors uses rank (based on contributions_total) for consistency
-  const orderColumn = activeTab === "contributors" ? "rank"
-    : activeTab === "stars" ? "total_stars"
-    : activeTab === "architects" ? "public_repos"
+  // Fetch instagrammers sorted by the active metric
+  // Posters uses rank (based on posts_count) for consistency
+  const orderColumn = activeTab === "posters" ? "rank"
+    : activeTab === "followers" ? "followers_count"
+    : activeTab === "following" ? "following_count"
     : activeTab === "recruiters" ? "referral_count"
     : activeTab === "xp" ? "xp_total"
-    : "contributions"; // achievers handled separately
-  const orderAscending = activeTab === "contributors"; // rank is ascending (1 = best)
+    : "posts_count"; // achievers handled separately
+  const orderAscending = activeTab === "posters"; // rank is ascending (1 = best)
 
-  let devs: Developer[] = [];
+  let instagrammers: Instagrammer[] = [];
   let achieverCounts: Record<string, number> = {};
 
   if (activeTab === "achievers") {
-    // DB-side aggregation: get top 50 devs by achievement count
+    // DB-side aggregation: get top 50 instagrammers by achievement count
     const { data: topAchievers } = await supabase
       .rpc("top_achievers", { lim: 50 });
 
-    const achieverIds = (topAchievers ?? []).map((a: { developer_id: number }) => a.developer_id);
+    const achieverIds = (topAchievers ?? []).map((a: { instagrammer_id: number }) => a.instagrammer_id);
     const achCountMap: Record<number, number> = {};
     for (const a of topAchievers ?? []) {
-      achCountMap[a.developer_id] = a.ach_count;
+      achCountMap[a.instagrammer_id] = a.ach_count;
     }
 
-    // Fetch dev details only for the top achievers
-    const { data: achieverDevs } = achieverIds.length > 0
+    // Fetch instagrammer details only for the top achievers
+    const { data: achieverInsts } = achieverIds.length > 0
       ? await supabase
-        .from("developers")
-        .select("id, github_login, name, avatar_url, contributions, contributions_total, total_stars, public_repos, primary_language, rank, referral_count, kudos_count, created_at, xp_total, xp_level")
+        .from("instagrammers")
+        .select("id, instagram_handle, name, avatar_url, posts_count, followers_count, following_count, district, rank, referral_count, kudos_count, created_at, xp_total, xp_level")
         .in("id", achieverIds)
       : { data: [] };
 
     // Sort by achievement count (preserving DB order)
-    const sorted = (achieverDevs ?? [])
+    const sorted = (achieverInsts ?? [])
       .map((d) => ({ ...d, ach_count: achCountMap[d.id] ?? 0 }))
       .sort((a, b) => b.ach_count - a.ach_count || new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
-    devs = sorted as unknown as Developer[];
+    instagrammers = sorted.map(d => ({ ...d, instagram_handle: d.instagram_handle, niche: d.district })) as unknown as Instagrammer[];
     for (const d of sorted) {
-      achieverCounts[d.github_login] = d.ach_count;
+      achieverCounts[d.instagram_handle] = d.ach_count;
     }
   } else {
     const { data } = await supabase
-      .from("developers")
-      .select("github_login, name, avatar_url, contributions, contributions_total, total_stars, public_repos, primary_language, rank, referral_count, kudos_count, created_at, xp_total, xp_level")
+      .from("instagrammers")
+      .select("instagram_handle, name, avatar_url, posts_count, followers_count, following_count, district, rank, referral_count, kudos_count, created_at, xp_total, xp_level")
       .order(orderColumn, { ascending: orderAscending, nullsFirst: false })
       .order("created_at", { ascending: true })
       .limit(50);
-    devs = (data ?? []) as Developer[];
+    instagrammers = (data ?? []).map(d => ({ ...d, niche: d.district })) as Instagrammer[];
   }
 
   // Check if recruiters tab should be hidden (no referral data)
   const hasRecruiters = activeTab === "recruiters"
-    ? devs.some((d) => (d.referral_count ?? 0) > 0)
+    ? instagrammers.some((d) => (d.referral_count ?? 0) > 0)
     : true;
 
-  const topLogins = devs.map((d) => d.github_login.toLowerCase());
+  const topLogins = instagrammers.map((d) => d.instagram_handle.toLowerCase());
 
-  function getMetricValue(dev: Developer): string {
+  function getMetricValue(inst: Instagrammer): string {
     switch (activeTab) {
-      case "contributors": return ((dev.contributions_total && dev.contributions_total > 0) ? dev.contributions_total : dev.contributions).toLocaleString();
-      case "stars": return dev.total_stars.toLocaleString();
-      case "architects": return dev.public_repos.toLocaleString();
-      case "achievers": return String(achieverCounts[dev.github_login] ?? 0);
-      case "recruiters": return (dev.referral_count ?? 0).toLocaleString();
-      case "xp": return (dev.xp_total ?? 0).toLocaleString();
+      case "posters": return inst.posts_count.toLocaleString();
+      case "followers": return inst.followers_count.toLocaleString();
+      case "following": return inst.following_count.toLocaleString();
+      case "achievers": return String(achieverCounts[inst.instagram_handle] ?? 0);
+      case "recruiters": return (inst.referral_count ?? 0).toLocaleString();
+      case "xp": return (inst.xp_total ?? 0).toLocaleString();
       default: return "";
     }
   }
 
-  function getXpBadge(dev: Developer): { title: string; color: string } | null {
-    if (activeTab !== "xp" || !dev.xp_level) return null;
-    const rank = rankFromLevel(dev.xp_level);
-    const tier = tierFromLevel(dev.xp_level);
-    return { title: `Lv${dev.xp_level} ${rank.title}`, color: tier.color };
+  function getXpBadge(inst: Instagrammer): { title: string; color: string } | null {
+    if (activeTab !== "xp" || !inst.xp_level) return null;
+    const rank = rankFromLevel(inst.xp_level);
+    const tier = tierFromLevel(inst.xp_level);
+    return { title: `Lv${inst.xp_level} ${rank.title}`, color: tier.color };
   }
 
-  const metricLabel = activeTab === "contributors" ? "Contributions"
-    : activeTab === "stars" ? "Stars"
-    : activeTab === "architects" ? "Repos"
+  const metricLabel = activeTab === "posters" ? "Posts"
+    : activeTab === "followers" ? "Followers"
+    : activeTab === "following" ? "Following"
     : activeTab === "achievers" ? "Achievements"
     : activeTab === "xp" ? "XP"
     : "Referrals";
 
   // A4: Raw metric values for "You vs. Next" component
-  function getMetricValueRaw(dev: Developer): number {
+  function getMetricValueRaw(inst: Instagrammer): number {
     switch (activeTab) {
-      case "contributors": return (dev.contributions_total && dev.contributions_total > 0) ? dev.contributions_total : dev.contributions;
-      case "stars": return dev.total_stars;
-      case "architects": return dev.public_repos;
-      case "achievers": return achieverCounts[dev.github_login] ?? 0;
-      case "recruiters": return dev.referral_count ?? 0;
-      case "xp": return dev.xp_total ?? 0;
+      case "posters": return inst.posts_count;
+      case "followers": return inst.followers_count;
+      case "following": return inst.following_count;
+      case "achievers": return achieverCounts[inst.instagram_handle] ?? 0;
+      case "recruiters": return inst.referral_count ?? 0;
+      case "xp": return inst.xp_total ?? 0;
       default: return 0;
     }
   }
 
-  const devMetrics = devs.map((d) => ({
-    login: d.github_login.toLowerCase(),
+  const devMetrics = instagrammers.map((d) => ({
+    login: d.instagram_handle.toLowerCase(),
     value: getMetricValueRaw(d),
   }));
 
-  // A6: "NEW" detection — devs created in last 7 days
+  // A6: "NEW" detection — instagrammers created in last 7 days
   const sevenDaysAgo = Date.now() - 7 * 86400000;
   const newLogins = new Set(
-    devs
+    instagrammers
       .filter((d) => d.created_at && new Date(d.created_at).getTime() > sevenDaysAgo)
-      .map((d) => d.github_login.toLowerCase())
+      .map((d) => d.instagram_handle.toLowerCase())
   );
 
   return (
@@ -197,11 +196,11 @@ export default async function LeaderboardPage({
             Leader<span style={{ color: ACCENT }}>board</span>
           </h1>
           <p className="mt-3 text-xs text-muted normal-case">
-            Top developers ranked in Git City
+            Top creators ranked in InstaCity
           </p>
         </div>
 
-        {/* Mode toggle: Developers | Game */}
+        {/* Mode toggle: Creators | Game */}
         <div className="mt-6 flex justify-center">
           <div className="flex border-2 border-border">
             <Link
@@ -212,7 +211,7 @@ export default async function LeaderboardPage({
                 backgroundColor: mode === "developers" ? "rgba(200, 230, 74, 0.1)" : "transparent",
               }}
             >
-              Developers
+              Creators
             </Link>
             <Link
               href="/leaderboard?mode=game"
@@ -272,21 +271,20 @@ export default async function LeaderboardPage({
 
             {/* Table */}
             <div className="mt-6 border-[3px] border-border">
-              {/* Header row */}
               <div className="flex items-center gap-4 border-b-[3px] border-border bg-bg-card px-5 py-3 text-xs text-muted">
                 <span className="w-10 text-center">#</span>
-                <span className="flex-1">Developer</span>
-                <span className="hidden w-24 text-right sm:block">{activeTab === "xp" ? "Rank" : "Language"}</span>
+                <span className="flex-1">Creator</span>
+                <span className="hidden w-24 text-right sm:block">{activeTab === "xp" ? "Rank" : "Niche"}</span>
                 <span className="w-28 text-right">{metricLabel}</span>
               </div>
 
               {/* Rows */}
-              {devs.map((dev, i) => {
+              {instagrammers.map((inst, i) => {
                 const pos = i + 1;
                 return (
                   <Link
-                    key={dev.github_login}
-                    href={`/dev/${dev.github_login}`}
+                    key={inst.instagram_handle}
+                    href={`/dev/${inst.instagram_handle}`}
                     className="flex items-center gap-4 border-b border-border/50 px-5 py-3.5 transition-colors hover:bg-bg-card"
                   >
                     <span className="w-10 text-center">
@@ -296,7 +294,7 @@ export default async function LeaderboardPage({
                       >
                         {pos}
                       </span>
-                      {newLogins.has(dev.github_login.toLowerCase()) && (
+                      {newLogins.has(inst.instagram_handle.toLowerCase()) && (
                         <span className="block text-[7px] font-bold" style={{ color: "#ffd700" }}>
                           NEW
                         </span>
@@ -304,10 +302,10 @@ export default async function LeaderboardPage({
                     </span>
 
                     <div className="flex flex-1 items-center gap-3 overflow-hidden">
-                      {dev.avatar_url && (
+                      {inst.avatar_url && (
                         <Image
-                          src={dev.avatar_url}
-                          alt={dev.github_login}
+                          src={inst.avatar_url}
+                          alt={inst.instagram_handle}
                           width={36}
                           height={36}
                           className="border-2 border-border"
@@ -316,12 +314,12 @@ export default async function LeaderboardPage({
                       )}
                       <div className="overflow-hidden">
                         <p className="truncate text-sm text-cream">
-                          {dev.name ?? dev.github_login}
-                          <LeaderboardYouBadge login={dev.github_login} />
+                          {inst.name ?? inst.instagram_handle}
+                          <LeaderboardYouBadge login={inst.instagram_handle} />
                         </p>
-                        {dev.name && (
+                        {inst.name && (
                           <p className="truncate text-[10px] text-muted">
-                            @{dev.github_login}
+                            @{inst.instagram_handle}
                           </p>
                         )}
                       </div>
@@ -330,16 +328,16 @@ export default async function LeaderboardPage({
                     <span className="hidden w-24 text-right text-xs text-muted sm:block">
                       {activeTab === "xp"
                         ? (() => {
-                            const badge = getXpBadge(dev);
+                            const badge = getXpBadge(inst);
                             return badge ? (
                               <span style={{ color: badge.color }}>{badge.title}</span>
                             ) : "\u2014";
                           })()
-                        : (dev.primary_language ?? "\u2014")}
+                        : (inst.niche ?? "\u2014")}
                     </span>
 
-                    <span className="w-28 text-right text-sm" style={{ color: activeTab === "xp" ? tierFromLevel(dev.xp_level ?? 1).color : ACCENT }}>
-                      {getMetricValue(dev)}
+                    <span className="w-28 text-right text-sm" style={{ color: activeTab === "xp" ? tierFromLevel(inst.xp_level ?? 1).color : ACCENT }}>
+                      {getMetricValue(inst)}
                     </span>
                   </Link>
                 );
@@ -348,7 +346,7 @@ export default async function LeaderboardPage({
               {/* "YOU" row if not in top 50 — handled client-side */}
               <LeaderboardUserPosition tab={activeTab} topLogins={topLogins} />
 
-              {devs.length === 0 && (
+              {instagrammers.length === 0 && (
                 <div className="px-5 py-8 text-center text-xs text-muted normal-case">
                   No data for this category yet.
                 </div>

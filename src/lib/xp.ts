@@ -151,6 +151,23 @@ export function calculateGithubXp(dev: {
   );
 }
 
+// ─── Instagram XP (log scale) ───────────────────────────────
+
+export function calculateInstagramXp(
+  postsCount: number,
+  followersCount: number,
+  followingCount?: number,
+): number {
+  // Posts are the primary metric (like contributions)
+  // Followers are secondary (like stars)
+  // Following has minimal impact
+  return (
+    Math.floor(Math.log2(Math.max(postsCount, 1) + 1) * 20) +
+    Math.floor(Math.log2(Math.max(followersCount, 1) + 1) * 15) +
+    Math.floor(Math.log2(Math.max(followingCount ?? 0, 1) + 1) * 3)
+  );
+}
+
 // ─── Achievement XP ─────────────────────────────────────────
 
 const ACHIEVEMENT_XP: Record<string, number> = {

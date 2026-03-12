@@ -7,7 +7,7 @@ import { createServerSupabase } from "@/lib/supabase-server";
 import { getSupabaseAdmin } from "@/lib/supabase";
 import { getOwnedItems } from "@/lib/items";
 import { TIER_COLORS } from "@/lib/achievements";
-import { DISTRICT_NAMES, DISTRICT_COLORS } from "@/lib/github";
+import { DISTRICT_NAMES, DISTRICT_COLORS } from "@/lib/instagram";
 import { ITEM_NAMES } from "@/lib/zones";
 import { rankFromLevel, tierFromLevel, levelProgress, xpForLevel } from "@/lib/xp";
 import ClaimButton from "@/components/ClaimButton";
