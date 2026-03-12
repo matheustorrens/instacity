@@ -1,73 +1,56 @@
 import type { Metadata } from "next";
 import Script from "next/script";
-import { Analytics } from "@vercel/analytics/next";
-import { SpeedInsights } from "@vercel/speed-insights/next";
 import GlobalRadio from "@/components/GlobalRadio";
 import "./globals.css";
 
 export const metadata: Metadata = {
   metadataBase: new URL(
-    process.env.NEXT_PUBLIC_BASE_URL ??
-      (process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : "http://localhost:3000")
+    process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3001"
   ),
-  title: "Git City - Your GitHub as a 3D City",
+  title: "InstaCity - Seu Instagram como uma Cidade 3D",
   description:
-    "Explore GitHub users as buildings in a 3D pixel art city. Fly through the city and discover developers.",
+    "Explore perfis do Instagram como prédios em uma cidade 3D pixel art. Voe pela cidade e descubra criadores.",
   keywords: [
-    "github",
+    "instagram",
     "3d city",
-    "developer profile",
-    "contributions",
+    "perfil instagram",
+    "seguidores",
     "pixel art",
-    "open source",
-    "git visualization",
+    "influenciadores",
+    "visualização instagram",
   ],
   openGraph: {
-    title: "Git City - Your GitHub as a 3D City",
+    title: "InstaCity - Seu Instagram como uma Cidade 3D",
     description:
-      "Explore GitHub users as buildings in a 3D pixel art city. Fly through the city and discover developers.",
-    siteName: "Git City",
+      "Explore perfis do Instagram como prédios em uma cidade 3D pixel art. Voe pela cidade e descubra criadores.",
+    siteName: "InstaCity",
     type: "website",
-    locale: "en_US",
+    locale: "pt_BR",
   },
   twitter: {
     card: "summary_large_image",
-    creator: "@samuelrizzondev",
-    site: "@samuelrizzondev",
   },
-  authors: [{ name: "Samuel Rizzon", url: "https://x.com/samuelrizzondev" }],
   icons: {
     icon: "/favicon.ico",
     apple: "/apple-icon.png",
   },
 };
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_URL ??
-  (process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : "http://localhost:3000");
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL ?? "http://localhost:3001";
 
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
-  name: "Git City",
+  name: "InstaCity",
   description:
-    "Your GitHub profile as a 3D pixel art building in an interactive city",
+    "Seu perfil do Instagram como um prédio 3D pixel art em uma cidade interativa",
   url: BASE_URL,
-  applicationCategory: "DeveloperApplication",
+  applicationCategory: "SocialNetworkingApplication",
   operatingSystem: "Web",
-  author: {
-    "@type": "Person",
-    name: "Samuel Rizzon",
-    url: "https://x.com/samuelrizzondev",
-  },
   offers: {
     "@type": "Offer",
     price: "0",
-    priceCurrency: "USD",
+    priceCurrency: "BRL",
   },
 };
 
@@ -97,8 +80,6 @@ export default function RootLayout({
       <body className="bg-bg font-pixel text-warm" suppressHydrationWarning>
         {children}
         <GlobalRadio />
-        <Analytics />
-        <SpeedInsights />
         {process.env.NEXT_PUBLIC_HIMETRICA_API_KEY && (
           <>
             <Script
