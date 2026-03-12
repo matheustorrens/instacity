@@ -33,7 +33,6 @@ import { rankFromLevel, tierFromLevel, levelProgress, xpForLevel } from "@/lib/x
 import LoadingScreen, { type LoadingStage } from "@/components/LoadingScreen";
 import { getCityCache, setCityCache, clearCityCache } from "@/lib/cityCache";
 import { DEFAULT_SKY_ADS, buildAdLink, trackAdEvent, trackAdEvents, isBuildingAd } from "@/lib/skyAds";
-import { track } from "@vercel/analytics";
 import {
   identifyUser,
   trackSignInClicked,
@@ -2034,7 +2033,6 @@ function HomeContent() {
             // Single beacon for both events (avoids rate limit dropping cta_click)
             trackAdEvents(ad.id, ["click", "cta_click"], authLogin || undefined);
             trackSkyAdCtaClick(ad.id, ad.vehicle);
-            track("sky_ad_click", { ad_id: ad.id, vehicle: ad.vehicle, brand: ad.brand ?? "" });
             if (isMailto) {
               window.location.href = ctaHref;
             } else {
@@ -4485,7 +4483,6 @@ function HomeContent() {
                         boxShadow: `4px 4px 0 0 ${theme.shadow}`,
                       }}
                       onClick={() => {
-                        track("sky_ad_click", { ad_id: clickedAd.id, vehicle: clickedAd.vehicle, brand: clickedAd.brand ?? "" });
                         trackAdEvent(clickedAd.id, "cta_click", authLogin || undefined);
                         trackSkyAdCtaClick(clickedAd.id, clickedAd.vehicle);
                       }}
